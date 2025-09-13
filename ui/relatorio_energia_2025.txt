@@ -1,0 +1,44 @@
+================================================================================
+RELATÓRIO COMPLETO DO SISTEMA DE ENERGIA SOLAR - 2025
+================================================================================
+Gerado em: 09/09/2025 16:51:38
+Versão do Sistema: 2.0-Legacy
+
+CONFIGURAÇÃO DO SISTEMA
+----------------------------------------
+Potência Instalada: 100.00 kW
+Eficiência do Sistema: 85.0%
+Tarifa de Energia: R$ 0,63/kWh
+Custo do Investimento: R$ 300.000,00
+
+RESULTADOS ANUAIS
+----------------------------------------
+ENERGIA:
+  Geração Total: 65.870,3 kWh
+  Consumo Total: 20.640,0 kWh
+  Saldo Anual: 45.230,3 kWh
+  Eficiência Média: 65,0%
+
+FINANCEIRO:
+  Economia Total: R$ 30.186,90
+  Payback Simples: 9.9 anos
+  ROI (25 anos): 130,2%
+  Valor do Investimento: R$ 300.000,00
+
+UNIDADES CONSUMIDORAS
+----------------------------------------
+Total de Unidades: 2
+Unidades Ativas: 2
+
+UNIDADES ATIVAS:
+1. Residência Principal
+   Consumo Anual: 5.530,0 kWh
+   Tipo: monofasica
+
+2. Comércio Local
+   Consumo Anual: 15.110,0 kWh
+   Tipo: trifasica
+
+================================================================================
+Fim do Relatório
+================================================================================

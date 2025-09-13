@@ -1,0 +1,12 @@
+{
+    "configuracao": {
+        "potencia_instalada_kw": 150.0,
+        "eficiencia_sistema": 0.85,
+        "fator_capacidade": 0.15,
+        "tarifa_energia_kwh": 0.75,
+        "tarifa_tusd_kwh": 0.25,
+        "tarifa_te_kwh": 0.5,
+        "taxa_disponibilidade_mono": 30.0,
+        "taxa_disponibilidade_bi": 50.0,
+        "taxa_disponibilidade_tri": 100.0,
+        "bandeira_atual": 

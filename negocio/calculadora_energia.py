@@ -1,259 +1,445 @@
-# usina_01/negocio/calculadora_energia.py
+"""
+Calculadora de energia solar - Versão adaptada com funcionalidades legacy
+"""
 
-from typing import Dict, List, Tuple
-from dataclasses import dataclass
-from nucleo.modelos import SistemaEnergia, UnidadeConsumidora, ConfiguracaoSistema
-from utilitarios.constantes import MESES_APENAS
+from typing import List, Dict, Tuple
+import math
+from datetime import datetime, timedelta
 
-
-@dataclass
-class ResultadoEnergia:
-    """Resultado dos cálculos de energia para um mês específico."""
-    mes: str
-    geracao_kwh: float
-    consumo_total_kwh: float
-    excesso_kwh: float
-    deficit_kwh: float
-    energia_injetada_kwh: float
-    energia_consumida_rede_kwh: float
-    saldo_energetico_kwh: float
-
-
-@dataclass
-class ResumoAnual:
-    """Resumo anual dos cálculos de energia."""
-    geracao_total_kwh: float
-    consumo_total_kwh: float
-    excesso_total_kwh: float
-    deficit_total_kwh: float
-    energia_injetada_total_kwh: float
-    energia_consumida_rede_total_kwh: float
-    saldo_energetico_total_kwh: float
-    percentual_autossuficiencia: float
+from nucleo.modelos import (
+    SistemaEnergia, ConfiguracaoSistema, UnidadeConsumidora,
+    ResultadoMensalEnergia, ResultadoAnualEnergia, TipoLigacao
+)
+from nucleo.excecoes import ErroCalculoEnergia
 
 
 class CalculadoraEnergia:
+    """Calculadora principal para cálculos energéticos"""
+
+    def __init__(self, sistema: SistemaEnergia):
+        self.sistema = sistema
+        self.config = sistema.configuracao
+
+    def calcular_geracao_mensal_real(self, mes: int, ano: int = None) -> float:
+        """
+        Calcula geração real mensal considerando fatores do sistema legacy
+        """
+        try:
+            if not (1 <= mes <= 12):
+                raise ErroCalculoEnergia(f"Mês inválido: {mes}")
+
+            # Geração base do mês (índice 0-11)
+            geracao_base = self.config.geracao_mensal_kwh[mes - 1]
+
+            # Aplicar eficiência do sistema
+            geracao_com_eficiencia = geracao_base * self.config.eficiencia_sistema
+
+            # Aplicar perdas do sistema (do sistema legacy)
+            geracao_com_perdas = geracao_com_eficiencia * (1 - self.config.perdas_sistema)
+
+            # Aplicar fator de simultaneidade (do sistema legacy)
+            geracao_final = geracao_com_perdas * self.config.fator_simultaneidade
+
+            return max(0.0, geracao_final)
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular geração mensal: {e}")
+
+    def calcular_consumo_total_mensal(self, mes: int) -> float:
+        """
+        Calcula consumo total mensal de todas as unidades ativas
+        """
+        try:
+            if not (1 <= mes <= 12):
+                raise ErroCalculoEnergia(f"Mês inválido: {mes}")
+
+            consumo_total = 0.0
+            unidades_ativas = self.sistema.get_unidades_ativas()
+
+            for unidade in unidades_ativas:
+                # Consumo do mês (índice 0-11)
+                consumo_unidade = unidade.consumo_mensal_kwh[mes - 1]
+                consumo_total += consumo_unidade
+
+            return consumo_total
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular consumo total: {e}")
+
+    def calcular_consumo_minimo_mensal(self, mes: int) -> float:
+        """
+        Calcula consumo mínimo mensal (taxa de disponibilidade)
+        Funcionalidade do sistema legacy
+        """
+        try:
+            consumo_minimo_total = 0.0
+            unidades_ativas = self.sistema.get_unidades_ativas()
+
+            for unidade in unidades_ativas:
+                taxa_disponibilidade = unidade.get_taxa_disponibilidade()
+                consumo_minimo_total += taxa_disponibilidade
+
+            return consumo_minimo_total
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular consumo mínimo: {e}")
+
+    def calcular_saldo_energetico_mensal(self, mes: int, ano: int = None) -> Tuple[float, float, float]:
+        """
+        Calcula saldo energético mensal
+        Retorna: (saldo_kwh, energia_injetada, energia_consumida_rede)
+        """
+        try:
+            geracao = self.calcular_geracao_mensal_real(mes, ano)
+            consumo = self.calcular_consumo_total_mensal(mes)
+            consumo_minimo = self.calcular_consumo_minimo_mensal(mes)
+
+            # Consumo efetivo (maior entre consumo real e mínimo)
+            consumo_efetivo = max(consumo, consumo_minimo)
+
+            # Saldo energético
+            saldo = geracao - consumo_efetivo
+
+            # Energia injetada na rede (quando há excesso)
+            energia_injetada = max(0.0, saldo) * self.config.percentual_injecao_rede
+
+            # Energia consumida da rede (quando há déficit)
+            energia_consumida_rede = max(0.0, -saldo)
+
+            return saldo, energia_injetada, energia_consumida_rede
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular saldo energético: {e}")
+
+    def calcular_fator_capacidade_real(self, mes: int, ano: int = None) -> float:
+        """
+        Calcula fator de capacidade real do sistema
+        Funcionalidade do sistema legacy
+        """
+        try:
+            geracao_real = self.calcular_geracao_mensal_real(mes, ano)
+
+            # Dias no mês
+            if ano:
+                import calendar
+                dias_mes = calendar.monthrange(ano, mes)[1]
+            else:
+                dias_mes = 30  # Aproximação
+
+            # Geração máxima teórica (24h por dia)
+            geracao_maxima_teorica = (
+                    self.config.potencia_instalada_kw * 24 * dias_mes
+            )
+
+            if geracao_maxima_teorica > 0:
+                fator_capacidade = geracao_real / geracao_maxima_teorica
+                return min(1.0, fator_capacidade)
+
+            return 0.0
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular fator de capacidade: {e}")
+
+    def calcular_eficiencia_real_sistema(self, mes: int, ano: int = None) -> float:
+        """
+        Calcula eficiência real do sistema considerando perdas
+        Funcionalidade do sistema legacy
+        """
+        try:
+            geracao_teorica = self.config.geracao_mensal_kwh[mes - 1]
+            geracao_real = self.calcular_geracao_mensal_real(mes, ano)
+
+            if geracao_teorica > 0:
+                eficiencia_real = geracao_real / geracao_teorica
+                return min(1.0, eficiencia_real)
+
+            return 0.0
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular eficiência real: {e}")
+
+    def calcular_perdas_sistema_kwh(self, mes: int, ano: int = None) -> float:
+        """
+        Calcula perdas do sistema em kWh
+        Funcionalidade do sistema legacy
+        """
+        try:
+            geracao_teorica = self.config.geracao_mensal_kwh[mes - 1]
+            geracao_real = self.calcular_geracao_mensal_real(mes, ano)
+
+            perdas_kwh = max(0.0, geracao_teorica - geracao_real)
+            return perdas_kwh
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular perdas: {e}")
+
+    def calcular_resultado_mensal_energia(self, mes: int, ano: int = None) -> ResultadoMensalEnergia:
+        """
+        Calcula resultado energético completo para um mês
+        """
+        try:
+            geracao = self.calcular_geracao_mensal_real(mes, ano)
+            consumo_total = self.calcular_consumo_total_mensal(mes)
+            saldo, energia_injetada, energia_consumida_rede = self.calcular_saldo_energetico_mensal(mes, ano)
+
+            # Cálculos adicionais do sistema legacy
+            fator_capacidade_real = self.calcular_fator_capacidade_real(mes, ano)
+            eficiencia_real = self.calcular_eficiencia_real_sistema(mes, ano)
+            perdas_kwh = self.calcular_perdas_sistema_kwh(mes, ano)
+
+            # Créditos (simplificado - será expandido na próxima fase)
+            creditos_gerados = max(0.0, saldo)
+            creditos_utilizados = 0.0  # Será calculado pelo gerenciador de distribuição
+
+            return ResultadoMensalEnergia(
+                mes=mes,
+                geracao_kwh=geracao,
+                consumo_total_kwh=consumo_total,
+                saldo_kwh=saldo,
+                creditos_gerados_kwh=creditos_gerados,
+                creditos_utilizados_kwh=creditos_utilizados,
+                energia_injetada_kwh=energia_injetada,
+                energia_consumida_rede_kwh=energia_consumida_rede,
+                fator_capacidade_real=fator_capacidade_real,
+                eficiencia_real=eficiencia_real,
+                perdas_kwh=perdas_kwh
+            )
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular resultado mensal: {e}")
+
+    def calcular_resultado_anual_energia(self, ano: int = None) -> ResultadoAnualEnergia:
+        """
+        Calcula resultado energético anual completo
+        """
+        try:
+            if ano is None:
+                ano = datetime.now().year
+
+            resultados_mensais = []
+            geracao_total = 0.0
+            consumo_total = 0.0
+            creditos_acumulados = 0.0
+            perdas_totais = 0.0
+
+            # Calcular para cada mês
+            for mes in range(1, 13):
+                resultado_mensal = self.calcular_resultado_mensal_energia(mes, ano)
+                resultados_mensais.append(resultado_mensal)
+
+                geracao_total += resultado_mensal.geracao_kwh
+                consumo_total += resultado_mensal.consumo_total_kwh
+                creditos_acumulados += resultado_mensal.creditos_gerados_kwh
+                perdas_totais += resultado_mensal.perdas_kwh
+
+            # Saldo anual
+            saldo_anual = geracao_total - consumo_total
+
+            # Autossuficiência percentual
+            if consumo_total > 0:
+                autossuficiencia = min(100.0, (geracao_total / consumo_total) * 100)
+            else:
+                autossuficiencia = 0.0
+
+            # Métricas médias do sistema legacy
+            fatores_capacidade = [r.fator_capacidade_real for r in resultados_mensais]
+            fator_capacidade_medio = sum(fatores_capacidade) / len(fatores_capacidade)
+
+            eficiencias = [r.eficiencia_real for r in resultados_mensais]
+            eficiencia_media = sum(eficiencias) / len(eficiencias)
+
+            return ResultadoAnualEnergia(
+                ano=ano,
+                geracao_total_kwh=geracao_total,
+                consumo_total_kwh=consumo_total,
+                saldo_anual_kwh=saldo_anual,
+                creditos_acumulados_kwh=creditos_acumulados,
+                autossuficiencia_percentual=autossuficiencia,
+                resultados_mensais=resultados_mensais,
+                fator_capacidade_medio=fator_capacidade_medio,
+                eficiencia_media=eficiencia_media,
+                perdas_totais_kwh=perdas_totais
+            )
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular resultado anual: {e}")
+
+    def calcular_projecao_multiplos_anos(self, anos: int = 5) -> List[ResultadoAnualEnergia]:
+        """
+        Calcula projeção para múltiplos anos
+        Funcionalidade do sistema legacy
+        """
+        try:
+            ano_inicial = datetime.now().year
+            resultados = []
+
+            for i in range(anos):
+                ano = ano_inicial + i
+                resultado_anual = self.calcular_resultado_anual_energia(ano)
+                resultados.append(resultado_anual)
+
+            return resultados
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular projeção: {e}")
+
+    def calcular_metricas_performance(self) -> Dict[str, float]:
+        """
+        Calcula métricas de performance do sistema
+        Funcionalidade do sistema legacy
+        """
+        try:
+            resultado_anual = self.calcular_resultado_anual_energia()
+
+            metricas = {
+                'geracao_especifica_kwh_kw': (
+                    resultado_anual.geracao_total_kwh / self.config.potencia_instalada_kw
+                    if self.config.potencia_instalada_kw > 0 else 0.0
+                ),
+                'fator_capacidade_medio': resultado_anual.fator_capacidade_medio,
+                'eficiencia_media': resultado_anual.eficiencia_media,
+                'autossuficiencia_percentual': resultado_anual.autossuficiencia_percentual,
+                'perdas_percentuais': (
+                    (resultado_anual.perdas_totais_kwh / sum(self.config.geracao_mensal_kwh)) * 100
+                    if sum(self.config.geracao_mensal_kwh) > 0 else 0.0
+                ),
+                'utilizacao_sistema_percentual': (
+                    (resultado_anual.consumo_total_kwh / resultado_anual.geracao_total_kwh) * 100
+                    if resultado_anual.geracao_total_kwh > 0 else 0.0
+                )
+            }
+
+            return metricas
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular métricas: {e}")
+
+
+class CalculadoraEnergiaSolar:
     """
-    Responsável por todos os cálculos relacionados à energia solar.
+    Calculadora específica para sistemas solares fotovoltaicos
+    Funcionalidades avançadas do sistema legacy
     """
 
     def __init__(self, sistema: SistemaEnergia):
         self.sistema = sistema
+        self.config = sistema.configuracao
 
-    def calcular_geracao_mensal(self, mes: str) -> float:
+    def calcular_irradiacao_mensal(self, mes: int, latitude: float = -15.0) -> float:
         """
-        Calcula a geração de energia para um mês específico.
-
-        Args:
-            mes: Nome do mês (ex: "Janeiro")
-
-        Returns:
-            Geração em kWh para o mês
+        Calcula irradiação solar mensal estimada
+        Funcionalidade do sistema legacy
         """
-        if mes not in self.sistema.configuracao.geracao_mensal:
-            return 0.0
+        try:
+            # Irradiação base para o Brasil (kWh/m²/dia)
+            irradiacao_base = [5.5, 5.8, 5.2, 4.8, 4.2, 3.8, 4.1, 4.6, 5.0, 5.4, 5.7, 5.6]
 
-        geracao_bruta = self.sistema.configuracao.geracao_mensal[mes]
-        eficiencia_decimal = self.sistema.configuracao.eficiencia / 100.0
+            # Ajuste por latitude (simplificado)
+            fator_latitude = 1.0 + (latitude + 15.0) * 0.01
 
-        return geracao_bruta * eficiencia_decimal
+            irradiacao_diaria = irradiacao_base[mes - 1] * fator_latitude
 
-    def calcular_consumo_total_mensal(self, mes: str) -> float:
+            # Dias no mês (aproximação)
+            dias_mes = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+            irradiacao_mensal = irradiacao_diaria * dias_mes[mes - 1]
+
+            return max(0.0, irradiacao_mensal)
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular irradiação: {e}")
+
+    def calcular_temperatura_celula(self, mes: int, temperatura_ambiente: float = 25.0) -> float:
         """
-        Calcula o consumo total de todas as unidades para um mês específico.
-
-        Args:
-            mes: Nome do mês (ex: "Janeiro")
-
-        Returns:
-            Consumo total em kWh para o mês
+        Calcula temperatura da célula fotovoltaica
+        Funcionalidade do sistema legacy
         """
-        consumo_total = 0.0
+        try:
+            # Temperatura ambiente média mensal (°C)
+            temp_ambiente_mensal = [26, 26, 25, 24, 22, 21, 21, 23, 25, 26, 26, 26]
 
-        for unidade in self.sistema.unidades:
-            consumo_uc = self.sistema.consumos.get(unidade.codigo, {})
-            consumo_mes = consumo_uc.get(mes, 0.0)
-            consumo_total += consumo_mes
+            if temperatura_ambiente == 25.0:  # Usar dados padrão
+                temp_ambiente = temp_ambiente_mensal[mes - 1]
+            else:
+                temp_ambiente = temperatura_ambiente
 
-        return consumo_total
+            # Temperatura da célula (NOCT - Normal Operating Cell Temperature)
+            # Fórmula simplificada: Tc = Ta + (NOCT - 20) * (G / 800)
+            noct = 45.0  # Temperatura nominal de operação da célula
+            irradiancia_media = 600.0  # W/m² (aproximação)
 
-    def calcular_resultado_mensal(self, mes: str) -> ResultadoEnergia:
+            temp_celula = temp_ambiente + (noct - 20) * (irradiancia_media / 800)
+
+            return temp_celula
+
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular temperatura da célula: {e}")
+
+    def calcular_eficiencia_temperatura(self, mes: int) -> float:
         """
-        Calcula o resultado energético completo para um mês.
-
-        Args:
-            mes: Nome do mês (ex: "Janeiro")
-
-        Returns:
-            ResultadoEnergia com todos os cálculos do mês
+        Calcula redução de eficiência por temperatura
+        Funcionalidade do sistema legacy
         """
-        geracao = self.calcular_geracao_mensal(mes)
-        consumo_total = self.calcular_consumo_total_mensal(mes)
+        try:
+            temp_celula = self.calcular_temperatura_celula(mes)
+            temp_referencia = 25.0  # Temperatura de referência STC
+            coef_temperatura = -0.004  # %/°C (típico para silício cristalino)
 
-        # Calcula excesso e déficit
-        if geracao >= consumo_total:
-            excesso = geracao - consumo_total
-            deficit = 0.0
-        else:
-            excesso = 0.0
-            deficit = consumo_total - geracao
+            reducao_eficiencia = (temp_celula - temp_referencia) * coef_temperatura
+            fator_temperatura = 1.0 + reducao_eficiencia
 
-        # Energia injetada na rede (excesso que vai para a rede)
-        energia_injetada = excesso
+            return max(0.5, fator_temperatura)  # Mínimo de 50% de eficiência
 
-        # Energia consumida da rede (déficit que vem da rede)
-        energia_consumida_rede = deficit
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular eficiência por temperatura: {e}")
 
-        # Saldo energético (positivo = excesso, negativo = déficit)
-        saldo_energetico = geracao - consumo_total
-
-        return ResultadoEnergia(
-            mes=mes,
-            geracao_kwh=geracao,
-            consumo_total_kwh=consumo_total,
-            excesso_kwh=excesso,
-            deficit_kwh=deficit,
-            energia_injetada_kwh=energia_injetada,
-            energia_consumida_rede_kwh=energia_consumida_rede,
-            saldo_energetico_kwh=saldo_energetico
-        )
-
-    def calcular_resultados_anuais(self) -> Tuple[List[ResultadoEnergia], ResumoAnual]:
+    def calcular_degradacao_anual(self, ano: int) -> float:
         """
-        Calcula os resultados energéticos para todos os meses do ano.
-
-        Returns:
-            Tupla contendo:
-            - Lista de ResultadoEnergia para cada mês
-            - ResumoAnual com totais e percentuais
+        Calcula degradação anual dos painéis
+        Funcionalidade do sistema legacy
         """
-        resultados_mensais = []
+        try:
+            ano_instalacao = datetime.now().year  # Assumir instalação atual
+            anos_operacao = max(0, ano - ano_instalacao)
 
-        # Calcula resultado para cada mês
-        for mes in MESES_APENAS:
-            resultado_mes = self.calcular_resultado_mensal(mes)
-            resultados_mensais.append(resultado_mes)
+            # Degradação típica: 0.5% ao ano após o primeiro ano
+            if anos_operacao == 0:
+                degradacao = 0.0
+            elif anos_operacao == 1:
+                degradacao = 0.025  # 2.5% no primeiro ano
+            else:
+                degradacao = 0.025 + (anos_operacao - 1) * 0.005
 
-        # Calcula totais anuais
-        geracao_total = sum(r.geracao_kwh for r in resultados_mensais)
-        consumo_total = sum(r.consumo_total_kwh for r in resultados_mensais)
-        excesso_total = sum(r.excesso_kwh for r in resultados_mensais)
-        deficit_total = sum(r.deficit_kwh for r in resultados_mensais)
-        energia_injetada_total = sum(r.energia_injetada_kwh for r in resultados_mensais)
-        energia_consumida_rede_total = sum(r.energia_consumida_rede_kwh for r in resultados_mensais)
-        saldo_energetico_total = sum(r.saldo_energetico_kwh for r in resultados_mensais)
+            fator_degradacao = 1.0 - degradacao
 
-        # Calcula percentual de autossuficiência
-        if consumo_total > 0:
-            energia_atendida_pelo_sistema = min(geracao_total, consumo_total)
-            percentual_autossuficiencia = (energia_atendida_pelo_sistema / consumo_total) * 100
-        else:
-            percentual_autossuficiencia = 0.0
+            return max(0.7, fator_degradacao)  # Mínimo de 70% após degradação
 
-        resumo_anual = ResumoAnual(
-            geracao_total_kwh=geracao_total,
-            consumo_total_kwh=consumo_total,
-            excesso_total_kwh=excesso_total,
-            deficit_total_kwh=deficit_total,
-            energia_injetada_total_kwh=energia_injetada_total,
-            energia_consumida_rede_total_kwh=energia_consumida_rede_total,
-            saldo_energetico_total_kwh=saldo_energetico_total,
-            percentual_autossuficiencia=percentual_autossuficiencia
-        )
-
-        return resultados_mensais, resumo_anual
-
-    def calcular_consumo_por_unidade(self, mes: str) -> Dict[str, float]:
-        """
-        Calcula o consumo individual de cada unidade para um mês.
-
-        Args:
-            mes: Nome do mês (ex: "Janeiro")
-
-        Returns:
-            Dicionário com código da UC como chave e consumo em kWh como valor
-        """
-        consumos_por_uc = {}
-
-        for unidade in self.sistema.unidades:
-            consumo_uc = self.sistema.consumos.get(unidade.codigo, {})
-            consumo_mes = consumo_uc.get(mes, 0.0)
-            consumos_por_uc[unidade.codigo] = consumo_mes
-
-        return consumos_por_uc
-
-    def obter_tarifa_minima_total(self) -> float:
-        """
-        Calcula a tarifa mínima total de todas as unidades.
-
-        Returns:
-            Soma das tarifas mínimas de todas as unidades em kWh
-        """
-        tarifa_total = 0.0
-
-        for unidade in self.sistema.unidades:
-            tarifa_total += unidade.tarifa_minima
-
-        return tarifa_total
+        except Exception as e:
+            raise ErroCalculoEnergia(f"Erro ao calcular degradação: {e}")
 
 
-# --- Bloco de Teste ---
-if __name__ == "__main__":
-    print("--- Teste: negocio/calculadora_energia.py ---")
+# Funções auxiliares para compatibilidade
+def calcular_energia_sistema_legacy(sistema: SistemaEnergia, mes: int = None) -> Dict[str, float]:
+    """
+    Função de compatibilidade com sistema legacy
+    """
+    calculadora = CalculadoraEnergia(sistema)
 
-    # Importa dados de exemplo para teste
-    from configuracao.definicoes import CONFIG_EXEMPLO, UNIDADES_EXEMPLO, CONSUMOS_EXEMPLO
-
-    # Cria sistema de teste
-    sistema_teste = SistemaEnergia(
-        configuracao=CONFIG_EXEMPLO,
-        unidades=UNIDADES_EXEMPLO,
-        consumos=CONSUMOS_EXEMPLO
-    )
-
-    calculadora = CalculadoraEnergia(sistema_teste)
-
-    print("\n--- Teste 1: Cálculo de geração mensal ---")
-    geracao_jan = calculadora.calcular_geracao_mensal("Janeiro")
-    print(f"Geração em Janeiro: {geracao_jan:.2f} kWh")
-    print(f"Eficiência aplicada: {sistema_teste.configuracao.eficiencia}%")
-
-    print("\n--- Teste 2: Cálculo de consumo total mensal ---")
-    consumo_jan = calculadora.calcular_consumo_total_mensal("Janeiro")
-    print(f"Consumo total em Janeiro: {consumo_jan:.2f} kWh")
-
-    print("\n--- Teste 3: Resultado energético mensal ---")
-    resultado_jan = calculadora.calcular_resultado_mensal("Janeiro")
-    print(f"Mês: {resultado_jan.mes}")
-    print(f"Geração: {resultado_jan.geracao_kwh:.2f} kWh")
-    print(f"Consumo: {resultado_jan.consumo_total_kwh:.2f} kWh")
-    print(f"Excesso: {resultado_jan.excesso_kwh:.2f} kWh")
-    print(f"Déficit: {resultado_jan.deficit_kwh:.2f} kWh")
-    print(f"Saldo energético: {resultado_jan.saldo_energetico_kwh:.2f} kWh")
-
-    print("\n--- Teste 4: Consumo por unidade ---")
-    consumos_jan = calculadora.calcular_consumo_por_unidade("Janeiro")
-    for codigo, consumo in consumos_jan.items():
-        nome_uc = next(u.nome for u in sistema_teste.unidades if u.codigo == codigo)
-        print(f"{codigo} ({nome_uc}): {consumo:.2f} kWh")
-
-    print("\n--- Teste 5: Tarifa mínima total ---")
-    tarifa_total = calculadora.obter_tarifa_minima_total()
-    print(f"Tarifa mínima total: {tarifa_total:.2f} kWh")
-
-    print("\n--- Teste 6: Resultados anuais ---")
-    resultados_mensais, resumo_anual = calculadora.calcular_resultados_anuais()
-
-    print(f"Geração total anual: {resumo_anual.geracao_total_kwh:.2f} kWh")
-    print(f"Consumo total anual: {resumo_anual.consumo_total_kwh:.2f} kWh")
-    print(f"Excesso total anual: {resumo_anual.excesso_total_kwh:.2f} kWh")
-    print(f"Déficit total anual: {resumo_anual.deficit_total_kwh:.2f} kWh")
-    print(f"Percentual de autossuficiência: {resumo_anual.percentual_autossuficiencia:.1f}%")
-
-    print(f"\nPrimeiros 3 meses detalhados:")
-    for i, resultado in enumerate(resultados_mensais[:3]):
-        print(f"{resultado.mes}: Geração={resultado.geracao_kwh:.1f} kWh, "
-              f"Consumo={resultado.consumo_total_kwh:.1f} kWh, "
-              f"Saldo={resultado.saldo_energetico_kwh:.1f} kWh")
-
-    print("\nTeste de Calculadora de Energia concluído com sucesso!")
+    if mes:
+        resultado = calculadora.calcular_resultado_mensal_energia(mes)
+        return {
+            'geracao_kwh': resultado.geracao_kwh,
+            'consumo_kwh': resultado.consumo_total_kwh,
+            'saldo_kwh': resultado.saldo_kwh,
+            'eficiencia_real': resultado.eficiencia_real,
+            'perdas_kwh': resultado.perdas_kwh
+        }
+    else:
+        resultado = calculadora.calcular_resultado_anual_energia()
+        return {
+            'geracao_total_kwh': resultado.geracao_total_kwh,
+            'consumo_total_kwh': resultado.consumo_total_kwh,
+            'saldo_anual_kwh': resultado.saldo_anual_kwh,
+            'autossuficiencia_percentual': resultado.autossuficiencia_percentual,
+            'perdas_totais_kwh': resultado.perdas_totais_kwh
+        }

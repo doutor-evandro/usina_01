@@ -1,413 +1,592 @@
-# usina_01/ui/janela_principal.py
+"""
+Janela Principal - Dashboard e Configurações
+Sistema de Energia Solar v2.0
+"""
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from datetime import datetime
 import os
-from typing import Optional
+import sys
 
-from nucleo.modelos import SistemaEnergia
-from dados.repositorio import RepositorioDados
-from negocio.calculadora_energia import CalculadoraEnergia
-from negocio.gerenciador_distribuicao import GerenciadorDistribuicao
-from negocio.gerador_relatorios import GeradorRelatorios
-from nucleo.excecoes import ErroCarregamentoDados, ErroSalvamentoDados
+# Adicionar path do projeto
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from main import SistemaEnergiaSolar
+from utilitarios.formatadores import formatar_moeda, formatar_energia, formatar_percentual
 
 
-class JanelaPrincipal:
-    """
-    Janela principal da aplicação de análise de energia solar.
-    Coordena todas as funcionalidades e interfaces do sistema.
-    """
+class InterfacePrincipal:
+    """Interface principal com dashboard e configurações"""
 
     def __init__(self):
-        self.root = tk.Tk()
-        self.sistema: Optional[SistemaEnergia] = None
-        self.repositorio = RepositorioDados()
+        print("🖼️ Iniciando Dashboard...")
 
-        # Configuração da janela principal
+        # Inicializar variáveis
+        self.root = tk.Tk()
+        self.sistema = None
+        self.canvas_grafico = None
+        self.figura_atual = None
+
+        # Configurar janela principal
         self.configurar_janela()
-        self.criar_menu()
+
+        # Criar sistema
+        if not self.inicializar_sistema():
+            return
+
+        # Criar interface
         self.criar_interface()
 
-        # Carrega dados iniciais
-        self.carregar_dados_iniciais()
+        # Atualizar dados iniciais
+        self.atualizar_dados()
+
+        print("✅ Dashboard criado com sucesso!")
 
     def configurar_janela(self):
-        """Configura as propriedades básicas da janela principal."""
-        self.root.title("Sistema de Análise de Energia Solar - Usina 01")
+        """Configura a janela principal"""
+        self.root.title("Sistema de Energia Solar - Dashboard v2.0")
         self.root.geometry("1200x800")
-        self.root.minsize(800, 600)
+        self.root.minsize(1000, 600)
 
-        # Centraliza a janela na tela
-        self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (1200 // 2)
-        y = (self.root.winfo_screenheight() // 2) - (800 // 2)
-        self.root.geometry(f"1200x800+{x}+{y}")
+        # Cores personalizadas
+        self.cores = {
+            'primaria': '#2E86AB',
+            'secundaria': '#A23B72',
+            'sucesso': '#F18F01',
+            'fundo': '#F5F5F5',
+            'texto': '#2C3E50'
+        }
 
-        # Configura o comportamento de fechamento
-        self.root.protocol("WM_DELETE_WINDOW", self.ao_fechar)
+    def inicializar_sistema(self):
+        """Inicializa o sistema de energia solar"""
+        try:
+            self.sistema = SistemaEnergiaSolar()
+            print("✅ Sistema inicializado com sucesso!")
+            return True
+
+        except Exception as e:
+            print(f"❌ Erro ao inicializar sistema: {e}")
+            messagebox.showerror("Erro", f"Erro ao inicializar sistema: {e}")
+            self.root.destroy()
+            return False
+
+    def criar_interface(self):
+        """Cria toda a interface gráfica"""
+        # Frame principal
+        self.frame_principal = ttk.Frame(self.root)
+        self.frame_principal.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Criar notebook (abas)
+        self.notebook = ttk.Notebook(self.frame_principal)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+
+        # Criar abas
+        self.criar_aba_dashboard()
+        self.criar_aba_configuracoes()
+        self.criar_aba_relatorios()
+
+        # Menu superior
+        self.criar_menu()
+
+        # Barra de status
+        self.criar_barra_status()
 
     def criar_menu(self):
-        """Cria a barra de menu da aplicação."""
+        """Cria o menu superior"""
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
 
         # Menu Arquivo
         menu_arquivo = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Arquivo", menu=menu_arquivo)
-        menu_arquivo.add_command(label="Novo Sistema", command=self.novo_sistema)
-        menu_arquivo.add_command(label="Abrir...", command=self.abrir_arquivo)
-        menu_arquivo.add_command(label="Salvar", command=self.salvar_dados)
-        menu_arquivo.add_command(label="Salvar Como...", command=self.salvar_como)
+        menu_arquivo.add_command(label="Atualizar Dados", command=self.atualizar_dados)
         menu_arquivo.add_separator()
-        menu_arquivo.add_command(label="Exportar Relatório...", command=self.exportar_relatorio)
-        menu_arquivo.add_separator()
-        menu_arquivo.add_command(label="Sair", command=self.ao_fechar)
+        menu_arquivo.add_command(label="Sair", command=self.root.quit)
 
-        # Menu Ferramentas
-        menu_ferramentas = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Ferramentas", menu=menu_ferramentas)
-        menu_ferramentas.add_command(label="Configurar Sistema", command=self.abrir_configuracao_sistema)
-        menu_ferramentas.add_command(label="Gerenciar Unidades", command=self.abrir_gerenciador_unidades)
-        menu_ferramentas.add_command(label="Inserir Consumos", command=self.abrir_painel_consumo)
-        menu_ferramentas.add_separator()
-        menu_ferramentas.add_command(label="Atualizar Cálculos", command=self.atualizar_calculos)
+        # Menu Análises
+        menu_analises = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Análises", menu=menu_analises)
+        menu_analises.add_command(label="🔬 Abrir Análises Avançadas", command=self.abrir_janela_analises)
 
         # Menu Ajuda
         menu_ajuda = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Ajuda", menu=menu_ajuda)
         menu_ajuda.add_command(label="Sobre", command=self.mostrar_sobre)
 
-    def criar_interface(self):
-        """Cria a interface principal da aplicação."""
-        # Frame principal com padding
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+    def criar_aba_dashboard(self):
+        """Cria a aba do dashboard principal"""
+        frame_dashboard = ttk.Frame(self.notebook)
+        self.notebook.add(frame_dashboard, text="📊 Dashboard")
 
-        # Configura redimensionamento
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(1, weight=1)
+        # Frame superior - Indicadores
+        frame_indicadores = ttk.LabelFrame(frame_dashboard, text="Indicadores Principais", padding=10)
+        frame_indicadores.pack(fill=tk.X, padx=5, pady=5)
+
+        self.criar_indicadores(frame_indicadores)
+
+        # Frame central - Gráfico principal
+        frame_grafico = ttk.LabelFrame(frame_dashboard, text="Análise Mensal", padding=10)
+        frame_grafico.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.criar_grafico_principal(frame_grafico)
+
+        # Frame inferior - Resumo rápido
+        frame_resumo = ttk.LabelFrame(frame_dashboard, text="Resumo do Sistema", padding=10)
+        frame_resumo.pack(fill=tk.X, padx=5, pady=5)
+
+        self.criar_resumo_rapido(frame_resumo)
+
+    def criar_indicadores(self, parent):
+        """Cria os indicadores principais"""
+        # Frame para os cards
+        frame_cards = ttk.Frame(parent)
+        frame_cards.pack(fill=tk.X)
+
+        # Configurar grid
+        for i in range(5):
+            frame_cards.columnconfigure(i, weight=1)
+
+        # Cards
+        self.card_geracao = self.criar_card(frame_cards, "Geração Anual", "0 kWh", self.cores['primaria'], 0, 0)
+        self.card_consumo = self.criar_card(frame_cards, "Consumo Anual", "0 kWh", self.cores['secundaria'], 0, 1)
+        self.card_economia = self.criar_card(frame_cards, "Economia Anual", "R$ 0,00", self.cores['sucesso'], 0, 2)
+        self.card_payback = self.criar_card(frame_cards, "Payback", "0 anos", "#28A745", 0, 3)
+        self.card_roi = self.criar_card(frame_cards, "ROI (25 anos)", "0%", "#6F42C1", 0, 4)
+
+    def criar_card(self, parent, titulo, valor, cor, row, col):
+        """Cria um card de indicador"""
+        frame_card = ttk.Frame(parent, relief=tk.RAISED, borderwidth=1)
+        frame_card.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
 
         # Título
-        titulo_label = ttk.Label(main_frame, text="Sistema de Análise de Energia Solar",
-                                 font=("Arial", 16, "bold"))
-        titulo_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        label_titulo = ttk.Label(frame_card, text=titulo, font=('Arial', 10, 'bold'))
+        label_titulo.pack(pady=(10, 5))
 
-        # Frame esquerdo - Controles
-        controles_frame = ttk.LabelFrame(main_frame, text="Controles", padding="10")
-        controles_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 10))
+        # Valor
+        label_valor = ttk.Label(frame_card, text=valor, font=('Arial', 14, 'bold'), foreground=cor)
+        label_valor.pack(pady=(0, 10))
 
-        # Botões de ação
-        ttk.Button(controles_frame, text="Configurar Sistema",
-                   command=self.abrir_configuracao_sistema, width=20).pack(pady=5, fill=tk.X)
+        return label_valor
 
-        ttk.Button(controles_frame, text="Gerenciar Unidades",
-                   command=self.abrir_gerenciador_unidades, width=20).pack(pady=5, fill=tk.X)
+    def criar_grafico_principal(self, parent):
+        """Cria o gráfico principal do dashboard"""
+        # Frame para controles
+        frame_controles = ttk.Frame(parent)
+        frame_controles.pack(fill=tk.X, pady=(0, 10))
 
-        ttk.Button(controles_frame, text="Inserir Consumos",
-                   command=self.abrir_painel_consumo, width=20).pack(pady=5, fill=tk.X)
+        # Combobox para tipo de gráfico
+        ttk.Label(frame_controles, text="Tipo de Gráfico:").pack(side=tk.LEFT, padx=(0, 5))
 
-        ttk.Separator(controles_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        self.combo_grafico = ttk.Combobox(frame_controles, values=[
+            "Geração vs Consumo",
+            "Economia Mensal",
+            "Saldo Energético"
+        ], state="readonly", width=20)
+        self.combo_grafico.pack(side=tk.LEFT, padx=(0, 10))
+        self.combo_grafico.set("Geração vs Consumo")
+        self.combo_grafico.bind('<<ComboboxSelected>>', self.atualizar_grafico)
 
-        ttk.Button(controles_frame, text="Atualizar Cálculos",
-                   command=self.atualizar_calculos, width=20).pack(pady=5, fill=tk.X)
+        # Botão atualizar
+        ttk.Button(frame_controles, text="🔄 Atualizar", command=self.atualizar_grafico).pack(side=tk.LEFT)
 
-        ttk.Button(controles_frame, text="Gerar Relatório",
-                   command=self.gerar_relatorio, width=20).pack(pady=5, fill=tk.X)
+        # Frame para o gráfico
+        self.frame_grafico = ttk.Frame(parent)
+        self.frame_grafico.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Separator(controles_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        # Criar gráfico inicial
+        self.criar_grafico_inicial()
 
-        ttk.Button(controles_frame, text="Salvar Dados",
-                   command=self.salvar_dados, width=20).pack(pady=5, fill=tk.X)
+    def criar_grafico_inicial(self):
+        """Cria o gráfico inicial"""
+        try:
+            # Criar figura
+            self.figura_atual = plt.Figure(figsize=(10, 5), dpi=100)
+            ax = self.figura_atual.add_subplot(111)
 
-        # Frame direito - Informações
-        info_frame = ttk.LabelFrame(main_frame, text="Informações do Sistema", padding="10")
-        info_frame.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
+            # Dados de exemplo
+            meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+                     'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
-        # Notebook para abas de informações
-        self.notebook = ttk.Notebook(info_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+            tipo = self.combo_grafico.get()
 
-        # Aba Resumo
-        self.frame_resumo = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_resumo, text="Resumo")
+            if tipo == "Geração vs Consumo":
+                geracao_mensal = [15162, 12453, 12500, 10423, 9002, 6675, 8197, 9954, 11561, 13234, 14000, 14606]
+                consumo_mensal = [8800] * 12
 
-        # Text widget para mostrar informações
-        self.text_resumo = tk.Text(self.frame_resumo, wrap=tk.WORD, font=("Consolas", 10))
-        scrollbar_resumo = ttk.Scrollbar(self.frame_resumo, orient=tk.VERTICAL, command=self.text_resumo.yview)
-        self.text_resumo.configure(yscrollcommand=scrollbar_resumo.set)
+                ax.bar([i - 0.2 for i in range(len(meses))], geracao_mensal, 0.4,
+                       label='Geração', color=self.cores['primaria'], alpha=0.8)
+                ax.bar([i + 0.2 for i in range(len(meses))], consumo_mensal, 0.4,
+                       label='Consumo', color=self.cores['secundaria'], alpha=0.8)
 
-        self.text_resumo.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar_resumo.pack(side=tk.RIGHT, fill=tk.Y)
+                ax.set_ylabel('Energia (kWh)')
+                ax.set_title('Geração vs Consumo Mensal')
+                ax.legend()
 
-        # Aba Relatório
-        self.frame_relatorio = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_relatorio, text="Relatório Completo")
+            elif tipo == "Economia Mensal":
+                economia = [4000, 3200, 3250, 2800, 2400, 1800, 2200, 2650, 3100, 3550, 3750, 3900]
 
-        self.text_relatorio = tk.Text(self.frame_relatorio, wrap=tk.WORD, font=("Consolas", 9))
-        scrollbar_relatorio = ttk.Scrollbar(self.frame_relatorio, orient=tk.VERTICAL, command=self.text_relatorio.yview)
-        self.text_relatorio.configure(yscrollcommand=scrollbar_relatorio.set)
+                ax.plot(meses, economia, marker='o', linewidth=2,
+                        color=self.cores['sucesso'], markersize=8)
+                ax.fill_between(meses, economia, alpha=0.3, color=self.cores['sucesso'])
+
+                ax.set_ylabel('Economia (R$)')
+                ax.set_title('Economia Mensal Estimada')
+
+            else:  # Saldo Energético
+                saldo = [6362, 3653, 3700, 1623, 202, -2125, -603, 1154, 2761, 4434, 5200, 5806]
+
+                cores_saldo = ['green' if s >= 0 else 'red' for s in saldo]
+                ax.bar(meses, saldo, color=cores_saldo, alpha=0.7)
+
+                ax.set_ylabel('Saldo (kWh)')
+                ax.set_title('Saldo Energético Mensal')
+                ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+
+            ax.set_xlabel('Meses')
+            ax.set_xticks(range(len(meses)))
+            ax.set_xticklabels(meses)
+            ax.grid(True, alpha=0.3)
+
+            # Limpar canvas anterior
+            if self.canvas_grafico:
+                self.canvas_grafico.get_tk_widget().destroy()
+                self.canvas_grafico = None
+
+            # Adicionar novo canvas
+            self.canvas_grafico = FigureCanvasTkAgg(self.figura_atual, self.frame_grafico)
+            self.canvas_grafico.draw()
+            self.canvas_grafico.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        except Exception as e:
+            print(f"Erro ao criar gráfico: {e}")
+
+    def criar_resumo_rapido(self, parent):
+        """Cria resumo rápido do sistema"""
+        # Frame com informações básicas
+        frame_info = ttk.Frame(parent)
+        frame_info.pack(fill=tk.X)
+
+        # Informações em colunas
+        ttk.Label(frame_info, text="🔋 Potência:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.label_potencia = ttk.Label(frame_info, text="92.0 kW")
+        self.label_potencia.grid(row=0, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(frame_info, text="🏠 Unidades Ativas:", font=('Arial', 10, 'bold')).grid(row=0, column=2, sticky=tk.W,
+                                                                                          padx=20)
+        self.label_unidades = ttk.Label(frame_info, text="9 unidades")
+        self.label_unidades.grid(row=0, column=3, sticky=tk.W, padx=5)
+
+        ttk.Label(frame_info, text="💰 Investimento:", font=('Arial', 10, 'bold')).grid(row=0, column=4, sticky=tk.W,
+                                                                                       padx=20)
+        self.label_investimento = ttk.Label(frame_info, text="R$ 450.000,00")
+        self.label_investimento.grid(row=0, column=5, sticky=tk.W, padx=5)
+
+    def criar_aba_configuracoes(self):
+        """Cria a aba de configurações"""
+        frame_config = ttk.Frame(self.notebook)
+        self.notebook.add(frame_config, text="⚙️ Configurações")
+
+        # Configurações do Sistema
+        frame_sistema = ttk.LabelFrame(frame_config, text="Configurações do Sistema", padding=20)
+        frame_sistema.pack(fill=tk.X, padx=20, pady=20)
+
+        # Potência
+        ttk.Label(frame_sistema, text="Potência Instalada (kW):").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.var_potencia = tk.DoubleVar()
+        self.entry_potencia = ttk.Entry(frame_sistema, textvariable=self.var_potencia, width=15)
+        self.entry_potencia.grid(row=0, column=1, padx=10, pady=5)
+
+        # Eficiência
+        ttk.Label(frame_sistema, text="Eficiência do Sistema (%):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.var_eficiencia = tk.DoubleVar()
+        self.entry_eficiencia = ttk.Entry(frame_sistema, textvariable=self.var_eficiencia, width=15)
+        self.entry_eficiencia.grid(row=1, column=1, padx=10, pady=5)
+
+        # Tarifa
+        ttk.Label(frame_sistema, text="Tarifa de Energia (R$/kWh):").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.var_tarifa = tk.DoubleVar()
+        self.entry_tarifa = ttk.Entry(frame_sistema, textvariable=self.var_tarifa, width=15)
+        self.entry_tarifa.grid(row=2, column=1, padx=10, pady=5)
+
+        # Investimento
+        ttk.Label(frame_sistema, text="Custo do Investimento (R$):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.var_investimento = tk.DoubleVar()
+        self.entry_investimento = ttk.Entry(frame_sistema, textvariable=self.var_investimento, width=15)
+        self.entry_investimento.grid(row=3, column=1, padx=10, pady=5)
+
+        # Botões
+        frame_botoes_config = ttk.Frame(frame_sistema)
+        frame_botoes_config.grid(row=4, column=0, columnspan=2, pady=10)
+
+        ttk.Button(frame_botoes_config, text="💾 Salvar Configurações",
+                   command=self.salvar_configuracoes).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botoes_config, text="🔄 Restaurar Padrão",
+                   command=self.restaurar_configuracoes).pack(side=tk.LEFT, padx=5)
+
+    def criar_aba_relatorios(self):
+        """Cria a aba de relatórios"""
+        frame_relatorios = ttk.Frame(self.notebook)
+        self.notebook.add(frame_relatorios, text="📋 Relatórios")
+
+        # Frame superior - Opções de relatório
+        frame_opcoes = ttk.LabelFrame(frame_relatorios, text="Gerar Relatórios", padding=10)
+        frame_opcoes.pack(fill=tk.X, padx=10, pady=5)
+
+        # Seleção de ano
+        ttk.Label(frame_opcoes, text="Ano:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.var_ano_relatorio = tk.IntVar(value=datetime.now().year)
+        self.spin_ano = ttk.Spinbox(frame_opcoes, from_=2020, to=2030, textvariable=self.var_ano_relatorio, width=10)
+        self.spin_ano.grid(row=0, column=1, padx=10, pady=5)
+
+        # Botões de relatório
+        frame_botoes_rel = ttk.Frame(frame_opcoes)
+        frame_botoes_rel.grid(row=1, column=0, columnspan=2, pady=10)
+
+        ttk.Button(frame_botoes_rel, text="📊 Relatório Completo",
+                   command=self.gerar_relatorio_completo).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botoes_rel, text="📋 Relatório Resumido",
+                   command=self.gerar_relatorio_resumido).pack(side=tk.LEFT, padx=5)
+
+        # Frame central - Visualização do relatório
+        frame_visualizacao = ttk.LabelFrame(frame_relatorios, text="Visualização", padding=10)
+        frame_visualizacao.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # Text widget com scroll
+        self.text_relatorio = tk.Text(frame_visualizacao, wrap=tk.WORD, font=('Courier', 10))
+        scroll_relatorio = ttk.Scrollbar(frame_visualizacao, orient=tk.VERTICAL, command=self.text_relatorio.yview)
+        self.text_relatorio.configure(yscrollcommand=scroll_relatorio.set)
 
         self.text_relatorio.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar_relatorio.pack(side=tk.RIGHT, fill=tk.Y)
+        scroll_relatorio.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Status bar
-        self.status_var = tk.StringVar()
-        self.status_var.set("Sistema carregado. Pronto para uso.")
-        status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN)
-        status_bar.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+    def criar_barra_status(self):
+        """Cria a barra de status"""
+        self.barra_status = ttk.Frame(self.root)
+        self.barra_status.pack(fill=tk.X, side=tk.BOTTOM)
 
-    def carregar_dados_iniciais(self):
-        """Carrega os dados iniciais do sistema."""
+        # Labels de status
+        self.label_status = ttk.Label(self.barra_status, text="Sistema carregado", relief=tk.SUNKEN)
+        self.label_status.pack(side=tk.LEFT, padx=5, pady=2)
+
+        self.label_data = ttk.Label(self.barra_status, text=f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+                                    relief=tk.SUNKEN)
+        self.label_data.pack(side=tk.RIGHT, padx=5, pady=2)
+
+    # ========== MÉTODOS DE ATUALIZAÇÃO ==========
+
+    def atualizar_dados(self):
+        """Atualiza todos os dados da interface"""
         try:
-            self.sistema = self.repositorio.carregar_sistema()
-            self.atualizar_interface()
-            self.status_var.set("Dados carregados com sucesso.")
-        except ErroCarregamentoDados as e:
-            messagebox.showerror("Erro", f"Erro ao carregar dados: {e}")
-            self.status_var.set("Erro ao carregar dados.")
+            # Carregar configurações atuais
+            config = self.sistema.sistema.configuracao
 
-    def atualizar_interface(self):
-        """Atualiza todas as informações exibidas na interface."""
-        if not self.sistema:
-            return
+            self.var_potencia.set(config.potencia_instalada_kw)
+            self.var_eficiencia.set(config.eficiencia_sistema * 100)
+            self.var_tarifa.set(config.tarifa_energia_kwh)
+            self.var_investimento.set(config.custo_investimento)
 
-        # Atualiza resumo
-        self.atualizar_resumo()
+            # Atualizar indicadores
+            self.atualizar_indicadores()
 
-        # Atualiza relatório se a aba estiver selecionada
-        if self.notebook.index(self.notebook.select()) == 1:
-            self.atualizar_relatorio()
+            # Atualizar resumo
+            self.atualizar_resumo()
+
+            # Atualizar status
+            self.label_status.config(text="Dados atualizados com sucesso")
+
+        except Exception as e:
+            print(f"Erro ao atualizar dados: {e}")
+
+    def atualizar_indicadores(self):
+        """Atualiza os indicadores do dashboard"""
+        try:
+            resultados = self.sistema.calcular_resultados_anuais(2024)
+
+            if resultados:
+                energia = resultados['energia']
+                financeiro = resultados['financeiro']
+
+                self.card_geracao.config(text=formatar_energia(energia['geracao_total']))
+                self.card_consumo.config(text=formatar_energia(energia['consumo_total']))
+                self.card_economia.config(text=formatar_moeda(financeiro['economia_total']))
+                self.card_payback.config(text=f"{financeiro['payback_anos']:.1f} anos")
+                self.card_roi.config(text=formatar_percentual(financeiro['roi_percentual']))
+
+        except Exception as e:
+            print(f"Erro ao atualizar indicadores: {e}")
 
     def atualizar_resumo(self):
-        """Atualiza o resumo do sistema."""
-        if not self.sistema:
-            self.text_resumo.delete(1.0, tk.END)
-            self.text_resumo.insert(tk.END, "Nenhum sistema carregado.")
-            return
-
+        """Atualiza o resumo rápido"""
         try:
-            calculadora = CalculadoraEnergia(self.sistema)
-            gerenciador = GerenciadorDistribuicao(self.sistema)
+            config = self.sistema.sistema.configuracao
+            unidades_ativas = len(self.sistema.sistema.get_unidades_ativas())
 
-            # Calcula dados principais
-            _, resumo_anual = calculadora.calcular_resultados_anuais()
-            _, resumo_fin_anual = gerenciador.calcular_resultados_financeiros_anuais()
+            self.label_potencia.config(text=f"{config.potencia_instalada_kw:.1f} kW")
+            self.label_unidades.config(text=f"{unidades_ativas} unidades")
+            self.label_investimento.config(text=formatar_moeda(config.custo_investimento))
 
-            # Monta texto do resumo
-            resumo = f"""RESUMO DO SISTEMA DE ENERGIA SOLAR
-{'=' * 50}
+        except Exception as e:
+            print(f"Erro ao atualizar resumo: {e}")
 
-CONFIGURAÇÃO:
-• Potência Inversor: {self.sistema.configuracao.potencia_inversor:,.0f} W
-• Potência Módulos: {self.sistema.configuracao.potencia_modulos:,.0f} W
-• Eficiência: {self.sistema.configuracao.eficiencia:.1f}%
-• Valor kWh: R\$ {self.sistema.configuracao.valor_kwh:.4f}
+    def atualizar_grafico(self, event=None):
+        """Atualiza o gráfico principal"""
+        self.criar_grafico_inicial()
 
-UNIDADES CONSUMIDORAS:
-• Total de Unidades: {len(self.sistema.unidades)}
+    # ========== MÉTODOS DE AÇÃO ==========
+
+    def salvar_configuracoes(self):
+        """Salva as configurações do sistema"""
+        try:
+            config = self.sistema.sistema.configuracao
+
+            config.potencia_instalada_kw = self.var_potencia.get()
+            config.eficiencia_sistema = self.var_eficiencia.get() / 100
+            config.tarifa_energia_kwh = self.var_tarifa.get()
+            config.custo_investimento = self.var_investimento.get()
+
+            self.atualizar_dados()
+            messagebox.showinfo("Sucesso", "Configurações salvas com sucesso!")
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao salvar configurações: {e}")
+
+    def restaurar_configuracoes(self):
+        """Restaura as configurações padrão"""
+        try:
+            if messagebox.askyesno("Confirmar", "Deseja restaurar as configurações padrão?"):
+                self.var_potencia.set(92.0)
+                self.var_eficiencia.set(100.0)
+                self.var_tarifa.set(0.65)
+                self.var_investimento.set(450000.0)
+                messagebox.showinfo("Sucesso", "Configurações restauradas!")
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao restaurar configurações: {e}")
+
+    def gerar_relatorio_completo(self):
+        """Gera relatório completo"""
+        try:
+            ano = self.var_ano_relatorio.get()
+
+            relatorio = f"""RELATÓRIO COMPLETO DO SISTEMA - {ano}
+=====================================
+
+CONFIGURAÇÕES:
+- Potência: {self.var_potencia.get():.1f} kW
+- Eficiência: {self.var_eficiencia.get():.1f}%
+- Tarifa: R$ {self.var_tarifa.get():.2f}/kWh
+- Investimento: R$ {self.var_investimento.get():,.2f}
+
+UNIDADES ATIVAS:
 """
 
-            for unidade in self.sistema.unidades:
-                resumo += f"• {unidade.codigo} - {unidade.nome} ({unidade.tipo_ligacao.value.upper()})\n"
+            for unidade in self.sistema.sistema.get_unidades_ativas():
+                consumo_anual = sum(unidade.consumo_mensal_kwh)
+                relatorio += f"- {unidade.nome}: {consumo_anual:,.0f} kWh/ano\n"
 
-            resumo += f"""
+            # Adicionar resultados se disponíveis
+            try:
+                resultados = self.sistema.calcular_resultados_anuais(ano)
+                if resultados:
+                    energia = resultados['energia']
+                    financeiro = resultados['financeiro']
+
+                    relatorio += f"""
 RESULTADOS ANUAIS:
-• Geração Total: {resumo_anual.geracao_total_kwh:,.2f} kWh
-• Consumo Total: {resumo_anual.consumo_total_kwh:,.2f} kWh
-• Autossuficiência: {resumo_anual.percentual_autossuficiencia:.1f}%
-• Economia Total: R\$ {resumo_fin_anual.economia_total_reais:,.2f}
-• Economia Percentual: {resumo_fin_anual.percentual_economia:.1f}%
-• Economia Mensal Média: R\$ {resumo_fin_anual.economia_total_reais / 12:,.2f}
+- Geração Total: {energia['geracao_total']:,.0f} kWh
+- Consumo Total: {energia['consumo_total']:,.0f} kWh
+- Saldo Anual: {energia['saldo_anual']:,.0f} kWh
+- Economia Total: R$ {financeiro['economia_total']:,.2f}
+- Payback: {financeiro['payback_anos']:.1f} anos
+- ROI (25 anos): {financeiro['roi_percentual']:.1f}%
+"""
+            except:
+                relatorio += "\nERRO: Não foi possível calcular resultados anuais"
 
-STATUS: Sistema operacional e calculado.
+            relatorio += f"""
+=====================================
+Relatório gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+Sistema de Energia Solar v2.0
 """
 
-            self.text_resumo.delete(1.0, tk.END)
-            self.text_resumo.insert(tk.END, resumo)
+            self.text_relatorio.delete(1.0, tk.END)
+            self.text_relatorio.insert(1.0, relatorio)
+
+            messagebox.showinfo("Sucesso", "Relatório completo gerado!")
 
         except Exception as e:
-            self.text_resumo.delete(1.0, tk.END)
-            self.text_resumo.insert(tk.END, f"Erro ao calcular resumo: {e}")
+            messagebox.showerror("Erro", f"Erro ao gerar relatório: {e}")
 
-    def atualizar_relatorio(self):
-        """Atualiza o relatório completo."""
-        if not self.sistema:
-            self.text_relatorio.delete(1.0, tk.END)
-            self.text_relatorio.insert(tk.END, "Nenhum sistema carregado.")
-            return
-
+    def gerar_relatorio_resumido(self):
+        """Gera relatório resumido"""
         try:
-            gerador = GeradorRelatorios(self.sistema)
-            relatorio_texto = gerador.gerar_relatorio_texto()
+            ano = self.var_ano_relatorio.get()
+
+            relatorio = f"""RELATÓRIO RESUMIDO - {ano}
+==========================
+
+SISTEMA:
+- Potência: {self.var_potencia.get():.1f} kW
+- Unidades: {len(self.sistema.sistema.get_unidades_ativas())}
+
+RESUMO FINANCEIRO:
+- Investimento: R$ {self.var_investimento.get():,.2f}
+- Tarifa: R$ {self.var_tarifa.get():.2f}/kWh
+
+STATUS: Sistema operacional
+Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+"""
 
             self.text_relatorio.delete(1.0, tk.END)
-            self.text_relatorio.insert(tk.END, relatorio_texto)
+            self.text_relatorio.insert(1.0, relatorio)
+
+            messagebox.showinfo("Sucesso", "Relatório resumido gerado!")
 
         except Exception as e:
-            self.text_relatorio.delete(1.0, tk.END)
-            self.text_relatorio.insert(tk.END, f"Erro ao gerar relatório: {e}")
+            messagebox.showerror("Erro", f"Erro ao gerar relatório resumido: {e}")
 
-    # Métodos de ação dos botões e menus
-    def novo_sistema(self):
-        """Cria um novo sistema."""
-        resposta = messagebox.askyesno("Novo Sistema",
-                                       "Isso criará um novo sistema e perderá os dados não salvos. Continuar?")
-        if resposta:
-            # Aqui você implementaria a criação de um novo sistema
-            messagebox.showinfo("Info", "Funcionalidade 'Novo Sistema' será implementada.")
-
-    def abrir_arquivo(self):
-        """Abre um arquivo de dados."""
-        arquivo = filedialog.askopenfilename(
-            title="Abrir arquivo de dados",
-            filetypes=[("Arquivos JSON", "*.json"), ("Todos os arquivos", "*.*")]
-        )
-        if arquivo:
-            try:
-                self.repositorio = RepositorioDados(arquivo)
-                self.sistema = self.repositorio.carregar_sistema()
-                self.atualizar_interface()
-                self.status_var.set(f"Arquivo carregado: {os.path.basename(arquivo)}")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao abrir arquivo: {e}")
-
-    def salvar_dados(self):
-        """Salva os dados atuais."""
-        if not self.sistema:
-            messagebox.showwarning("Aviso", "Nenhum sistema carregado para salvar.")
-            return
-
+    def abrir_janela_analises(self):
+        """Abre a janela de análises avançadas"""
         try:
-            self.repositorio.salvar_sistema(self.sistema)
-            self.status_var.set("Dados salvos com sucesso.")
-            messagebox.showinfo("Sucesso", "Dados salvos com sucesso!")
-        except ErroSalvamentoDados as e:
-            messagebox.showerror("Erro", f"Erro ao salvar dados: {e}")
+            from ui.janela_analises import JanelaAnalises
+            janela_analises = JanelaAnalises(self.sistema)
 
-    def salvar_como(self):
-        """Salva os dados em um novo arquivo."""
-        if not self.sistema:
-            messagebox.showwarning("Aviso", "Nenhum sistema carregado para salvar.")
-            return
-
-        arquivo = filedialog.asksaveasfilename(
-            title="Salvar como",
-            defaultextension=".json",
-            filetypes=[("Arquivos JSON", "*.json"), ("Todos os arquivos", "*.*")]
-        )
-        if arquivo:
-            try:
-                novo_repositorio = RepositorioDados(arquivo)
-                novo_repositorio.salvar_sistema(self.sistema)
-                self.repositorio = novo_repositorio
-                self.status_var.set(f"Dados salvos em: {os.path.basename(arquivo)}")
-                messagebox.showinfo("Sucesso", "Dados salvos com sucesso!")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao salvar arquivo: {e}")
-
-    def exportar_relatorio(self):
-        """Exporta o relatório para um arquivo de texto."""
-        if not self.sistema:
-            messagebox.showwarning("Aviso", "Nenhum sistema carregado.")
-            return
-
-        arquivo = filedialog.asksaveasfilename(
-            title="Exportar relatório",
-            defaultextension=".txt",
-            filetypes=[("Arquivos de texto", "*.txt"), ("Todos os arquivos", "*.*")]
-        )
-        if arquivo:
-            try:
-                gerador = GeradorRelatorios(self.sistema)
-                relatorio_texto = gerador.gerar_relatorio_texto()
-
-                with open(arquivo, 'w', encoding='utf-8') as f:
-                    f.write(relatorio_texto)
-
-                messagebox.showinfo("Sucesso", f"Relatório exportado para: {os.path.basename(arquivo)}")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao exportar relatório: {e}")
-
-    def abrir_configuracao_sistema(self):
-        """Abre a janela de configuração do sistema."""
-        messagebox.showinfo("Info", "Janela de configuração será implementada.")
-
-    def abrir_gerenciador_unidades(self):
-        """Abre o gerenciador de unidades."""
-        messagebox.showinfo("Info", "Gerenciador de unidades será implementado.")
-
-    def abrir_painel_consumo(self):
-        """Abre o painel de inserção de consumos."""
-        messagebox.showinfo("Info", "Painel de consumo será implementado.")
-
-    def atualizar_calculos(self):
-        """Atualiza todos os cálculos e a interface."""
-        if self.sistema:
-            self.atualizar_interface()
-            self.status_var.set("Cálculos atualizados.")
-        else:
-            messagebox.showwarning("Aviso", "Nenhum sistema carregado.")
-
-    def gerar_relatorio(self):
-        """Gera e exibe o relatório completo."""
-        if self.sistema:
-            self.notebook.select(1)  # Seleciona a aba do relatório
-            self.atualizar_relatorio()
-            self.status_var.set("Relatório gerado.")
-        else:
-            messagebox.showwarning("Aviso", "Nenhum sistema carregado.")
+        except ImportError:
+            messagebox.showinfo("Info", "Janela de análises ainda não implementada")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao abrir análises: {e}")
 
     def mostrar_sobre(self):
-        """Mostra informações sobre o sistema."""
-        sobre_texto = """Sistema de Análise de Energia Solar - Usina 01
-Versão 1.0
-
-Desenvolvido para análise e gerenciamento de sistemas
-de energia solar fotovoltaica com múltiplas unidades
-consumidoras.
-
-Funcionalidades:
-• Configuração de sistema solar
-• Gerenciamento de unidades consumidoras
-• Cálculos energéticos e financeiros
-• Geração de relatórios completos
-• Análise de payback
-
-© 2025 - Sistema Usina 01"""
-
-        messagebox.showinfo("Sobre", sobre_texto)
-
-    def ao_fechar(self):
-        """Ação executada ao fechar a aplicação."""
-        resposta = messagebox.askyesnocancel("Sair", "Deseja salvar os dados antes de sair?")
-        if resposta is True:  # Sim
-            self.salvar_dados()
-            self.root.destroy()
-        elif resposta is False:  # Não
-            self.root.destroy()
-        # Se Cancel, não faz nada (não fecha)
+        """Mostra informações sobre o sistema"""
+        messagebox.showinfo("Sobre",
+                            "Sistema de Energia Solar v2.0\n\n"
+                            "Dashboard Principal\n"
+                            "Desenvolvido para análise de sistemas fotovoltaicos\n\n"
+                            "© 2024")
 
     def executar(self):
-        """Inicia o loop principal da aplicação."""
-        self.root.mainloop()
+        """Executa a interface gráfica"""
+        try:
+            self.root.mainloop()
+        except Exception as e:
+            messagebox.showerror("Erro Crítico", f"Erro na execução: {e}")
+        finally:
+            print("👋 Dashboard encerrado!")
 
 
-# --- Bloco de Teste ---
-if __name__ == "__main__":
-    print("--- Teste: ui/janela_principal.py ---")
-    print("Iniciando interface gráfica...")
-
+def main():
+    """Função principal para teste"""
     try:
-        app = JanelaPrincipal()
-        print("✓ Interface criada com sucesso!")
-        print("✓ Dados carregados!")
-        print("Executando aplicação... (Feche a janela para continuar)")
+        app = InterfacePrincipal()
         app.executar()
-        print("✓ Aplicação encerrada com sucesso!")
     except Exception as e:
-        print(f"❌ Erro ao executar interface: {e}")
+        print(f"❌ Erro ao iniciar dashboard: {e}")
+        import traceback
+        traceback.print_exc()
 
-    print("Teste de Janela Principal concluído!")
+
+if __name__ == "__main__":
+    main()

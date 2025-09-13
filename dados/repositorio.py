@@ -60,7 +60,7 @@ class RepositorioDados:
     def carregar_sistema(self) -> SistemaEnergia:
         """
         Carrega os dados do sistema de um arquivo JSON.
-        Se o arquivo não existir, inicializa com dados de exemplo e salva.
+        Se o arquivo não existir ou estiver corrompido, inicializa com dados de exemplo.
         """
         if not os.path.exists(self.arquivo_dados):
             print(f"Arquivo '{self.arquivo_dados}' não encontrado. Inicializando com dados de exemplo.")
@@ -74,12 +74,28 @@ class RepositorioDados:
 
             # Converte o dicionário carregado de volta para a estrutura de dataclasses
             sistema = self._converter_de_json_para_modelo(raw_data)
-
             return sistema
+
         except json.JSONDecodeError as e:
-            raise ErroCarregamentoDados(f"Erro ao decodificar JSON do arquivo '{self.arquivo_dados}': {e}")
+            print(f"❌ Erro ao carregar dados: {e}")
+            print(f"🔧 Arquivo JSON corrompido na linha {e.lineno}, coluna {e.colno}")
+            print("📝 Criando backup e inicializando com dados de exemplo...")
+
+            # Fazer backup do arquivo corrompido
+            backup_path = f"{self.arquivo_dados}.backup"
+            os.rename(self.arquivo_dados, backup_path)
+            print(f"💾 Backup salvo em: {backup_path}")
+
+            # Criar novo sistema
+            sistema = self._inicializar_com_dados_exemplo()
+            self.salvar_sistema(sistema)
+            return sistema
+
         except Exception as e:
-            raise ErroCarregamentoDados(f"Erro inesperado ao carregar dados do arquivo '{self.arquivo_dados}': {e}")
+            print(f"❌ Erro inesperado: {e}")
+            print("📝 Inicializando com dados de exemplo...")
+            sistema = self._inicializar_com_dados_exemplo()
+            return sistema
 
     def salvar_sistema(self, sistema: SistemaEnergia):
         """

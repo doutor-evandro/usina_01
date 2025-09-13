@@ -1,193 +1,564 @@
-# usina_01/dados/migrador.py
+"""
+Migrador de dados - Versão adaptada para importar dados do sistema legacy
+"""
 
-from typing import Dict, Any
-from nucleo.excecoes import ErroCarregamentoDados
+import json
+import pandas as pd
+from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime
+import os
+from pathlib import Path
+
+from nucleo.modelos import (
+    SistemaEnergia, ConfiguracaoSistema, UnidadeConsumidora,
+    TipoLigacao, TipoUnidade, BandeiraTarifaria,
+    converter_dados_legacy
+)
+from nucleo.excecoes import ErroMigracaoDados
+from dados.repositorio import RepositorioDados
 
 
 class MigradorDados:
-    """
-    Responsável por migrar dados de versões antigas para a estrutura atual.
-    Permite evolução da estrutura de dados sem perder compatibilidade.
-    """
-
-    # Versão atual da estrutura de dados
-    VERSAO_ATUAL = "1.0"
+    """Migrador principal para dados do sistema"""
 
     def __init__(self):
-        # Dicionário que mapeia versões para suas respectivas funções de migração
-        self.migracoes = {
-            "0.9": self._migrar_de_0_9_para_1_0,
-            # Futuras migrações podem ser adicionadas aqui
-            # "1.0": self._migrar_de_1_0_para_1_1,
-        }
+        self.repositorio = RepositorioDados()
+        self.log_migracoes = []
 
-    def migrar_se_necessario(self, dados: Dict[str, Any]) -> Dict[str, Any]:
+    def migrar_excel_legacy(self, caminho_arquivo: str) -> SistemaEnergia:
         """
-        Verifica se os dados precisam ser migrados e aplica as migrações necessárias.
-
-        Args:
-            dados: Dicionário com os dados carregados do JSON
-
-        Returns:
-            Dicionário com os dados migrados para a versão atual
+        Migra dados de arquivo Excel do sistema legacy
         """
-        versao_dados = dados.get('versao', '0.9')  # Assume versão 0.9 se não especificada
+        try:
+            self._log("Iniciando migração de arquivo Excel legacy")
 
-        if versao_dados == self.VERSAO_ATUAL:
-            return dados  # Não precisa migrar
+            if not os.path.exists(caminho_arquivo):
+                raise ErroMigracaoDados(f"Arquivo não encontrado: {caminho_arquivo}")
 
-        print(f"Migrando dados da versão {versao_dados} para {self.VERSAO_ATUAL}...")
+            # Ler arquivo Excel
+            dados_excel = self._ler_excel_legacy(caminho_arquivo)
 
-        # Aplica migrações sequenciais até chegar na versão atual
-        dados_migrados = dados.copy()
-        versao_atual = versao_dados
+            # Converter para formato novo
+            sistema = self._converter_excel_para_sistema(dados_excel)
 
-        while versao_atual != self.VERSAO_ATUAL:
-            if versao_atual not in self.migracoes:
-                raise ErroCarregamentoDados(
-                    f"Não foi possível migrar dados da versão {versao_atual}. "
-                    f"Migração não implementada."
-                )
+            # Validar dados migrados
+            erros = sistema.validar_integridade()
+            if erros:
+                self._log(f"Avisos na validação: {erros}")
 
-            dados_migrados = self.migracoes[versao_atual](dados_migrados)
-            versao_atual = dados_migrados.get('versao', self.VERSAO_ATUAL)
+            self._log("Migração de Excel concluída com sucesso")
+            return sistema
 
-        print(f"Migração concluída para a versão {self.VERSAO_ATUAL}.")
-        return dados_migrados
+        except Exception as e:
+            raise ErroMigracaoDados(f"Erro na migração de Excel: {e}")
 
-    def _migrar_de_0_9_para_1_0(self, dados: Dict[str, Any]) -> Dict[str, Any]:
+    def migrar_json_legacy(self, caminho_arquivo: str) -> SistemaEnergia:
         """
-        Migra dados da versão 0.9 para 1.0.
-
-        Mudanças na versão 1.0:
-        - Adiciona campo 'versao' aos dados
-        - Garante que todos os campos obrigatórios estejam presentes
-        - Normaliza nomes de meses para formato completo
+        Migra dados de arquivo JSON do sistema legacy
         """
-        dados_migrados = dados.copy()
+        try:
+            self._log("Iniciando migração de arquivo JSON legacy")
 
-        # 1. Adiciona versão aos dados
-        dados_migrados['versao'] = '1.0'
+            if not os.path.exists(caminho_arquivo):
+                raise ErroMigracaoDados(f"Arquivo não encontrado: {caminho_arquivo}")
 
-        # 2. Garante que a estrutura básica existe
-        if 'configuracao' not in dados_migrados:
-            dados_migrados['configuracao'] = {
-                'potencia_inversor': 0.0,
-                'potencia_modulos': 0.0,
-                'geracao_mensal': {},
-                'eficiencia': 100.0,
-                'valor_kwh': 0.6305
+            # Ler arquivo JSON
+            with open(caminho_arquivo, 'r', encoding='utf-8') as f:
+                dados_json = json.load(f)
+
+            # Converter usando função do modelo
+            sistema = converter_dados_legacy(dados_json)
+
+            # Validar dados migrados
+            erros = sistema.validar_integridade()
+            if erros:
+                self._log(f"Avisos na validação: {erros}")
+
+            self._log("Migração de JSON concluída com sucesso")
+            return sistema
+
+        except Exception as e:
+            raise ErroMigracaoDados(f"Erro na migração de JSON: {e}")
+
+    def migrar_csv_consumos(self, caminho_arquivo: str, sistema: SistemaEnergia) -> SistemaEnergia:
+        """
+        Migra dados de consumo de arquivo CSV
+        """
+        try:
+            self._log("Iniciando migração de consumos CSV")
+
+            if not os.path.exists(caminho_arquivo):
+                raise ErroMigracaoDados(f"Arquivo não encontrado: {caminho_arquivo}")
+
+            # Ler CSV
+            df = pd.read_csv(caminho_arquivo, encoding='utf-8')
+
+            # Processar dados de consumo
+            self._processar_consumos_csv(df, sistema)
+
+            self._log("Migração de consumos CSV concluída")
+            return sistema
+
+        except Exception as e:
+            raise ErroMigracaoDados(f"Erro na migração de CSV: {e}")
+
+    def exportar_para_novo_formato(self, sistema: SistemaEnergia, caminho_destino: str = None) -> str:
+        """
+        Exporta sistema migrado para o novo formato JSON
+        """
+        try:
+            if caminho_destino is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                caminho_destino = f"sistema_migrado_{timestamp}.json"
+
+            # Salvar usando repositório
+            self.repositorio.salvar_sistema(sistema, caminho_destino)
+
+            self._log(f"Sistema exportado para: {caminho_destino}")
+            return caminho_destino
+
+        except Exception as e:
+            raise ErroMigracaoDados(f"Erro ao exportar sistema: {e}")
+
+    def criar_backup_sistema_atual(self, caminho_backup: str = None) -> str:
+        """
+        Cria backup do sistema atual antes da migração
+        """
+        try:
+            if caminho_backup is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                caminho_backup = f"backup_sistema_{timestamp}.json"
+
+            # Tentar carregar sistema atual
+            try:
+                sistema_atual = self.repositorio.carregar_sistema()
+                self.repositorio.salvar_sistema(sistema_atual, caminho_backup)
+                self._log(f"Backup criado: {caminho_backup}")
+                return caminho_backup
+            except:
+                self._log("Nenhum sistema atual encontrado para backup")
+                return ""
+
+        except Exception as e:
+            raise ErroMigracaoDados(f"Erro ao criar backup: {e}")
+
+    def validar_arquivo_legacy(self, caminho_arquivo: str) -> Dict[str, Any]:
+        """
+        Valida arquivo legacy antes da migração
+        """
+        try:
+            extensao = Path(caminho_arquivo).suffix.lower()
+            resultado_validacao = {
+                'valido': False,
+                'tipo_arquivo': extensao,
+                'erros': [],
+                'avisos': [],
+                'estatisticas': {}
             }
 
-        if 'unidades' not in dados_migrados:
-            dados_migrados['unidades'] = []
+            if not os.path.exists(caminho_arquivo):
+                resultado_validacao['erros'].append("Arquivo não encontrado")
+                return resultado_validacao
 
-        if 'consumos' not in dados_migrados:
-            dados_migrados['consumos'] = {}
+            if extensao == '.xlsx' or extensao == '.xls':
+                resultado_validacao.update(self._validar_excel_legacy(caminho_arquivo))
+            elif extensao == '.json':
+                resultado_validacao.update(self._validar_json_legacy(caminho_arquivo))
+            elif extensao == '.csv':
+                resultado_validacao.update(self._validar_csv_legacy(caminho_arquivo))
+            else:
+                resultado_validacao['erros'].append(f"Tipo de arquivo não suportado: {extensao}")
 
-        # 3. Normaliza nomes de meses (caso existam abreviações)
-        meses_mapping = {
-            'Jan': 'Janeiro', 'Fev': 'Fevereiro', 'Mar': 'Março', 'Abr': 'Abril',
-            'Mai': 'Maio', 'Jun': 'Junho', 'Jul': 'Julho', 'Ago': 'Agosto',
-            'Set': 'Setembro', 'Out': 'Outubro', 'Nov': 'Novembro', 'Dez': 'Dezembro'
+            resultado_validacao['valido'] = len(resultado_validacao['erros']) == 0
+            return resultado_validacao
+
+        except Exception as e:
+            return {
+                'valido': False,
+                'tipo_arquivo': 'desconhecido',
+                'erros': [f"Erro na validação: {e}"],
+                'avisos': [],
+                'estatisticas': {}
+            }
+
+    def obter_log_migracoes(self) -> List[str]:
+        """Retorna log das migrações realizadas"""
+        return self.log_migracoes.copy()
+
+    def limpar_log(self):
+        """Limpa log de migrações"""
+        self.log_migracoes.clear()
+
+    # Métodos privados
+
+    def _ler_excel_legacy(self, caminho_arquivo: str) -> Dict[str, Any]:
+        """Lê arquivo Excel do sistema legacy"""
+        try:
+            # Ler diferentes abas do Excel
+            excel_data = pd.ExcelFile(caminho_arquivo)
+            dados = {}
+
+            # Aba de configurações (assumindo nome padrão)
+            abas_config = ['Configuracao', 'Config', 'Sistema', 'Configurações']
+            for aba in abas_config:
+                if aba in excel_data.sheet_names:
+                    df_config = pd.read_excel(caminho_arquivo, sheet_name=aba)
+                    dados['configuracao'] = self._processar_aba_configuracao(df_config)
+                    break
+
+            # Aba de unidades
+            abas_unidades = ['Unidades', 'Consumidores', 'Clientes']
+            for aba in abas_unidades:
+                if aba in excel_data.sheet_names:
+                    df_unidades = pd.read_excel(caminho_arquivo, sheet_name=aba)
+                    dados['unidades'] = self._processar_aba_unidades(df_unidades)
+                    break
+
+            # Aba de consumos
+            abas_consumos = ['Consumos', 'Historico', 'Dados']
+            for aba in abas_consumos:
+                if aba in excel_data.sheet_names:
+                    df_consumos = pd.read_excel(caminho_arquivo, sheet_name=aba)
+                    dados['consumos'] = self._processar_aba_consumos(df_consumos)
+                    break
+
+            return dados
+
+        except Exception as e:
+            raise ErroMigracaoDados(f"Erro ao ler Excel: {e}")
+
+    def _processar_aba_configuracao(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Processa aba de configuração do Excel"""
+        config = {}
+
+        # Tentar diferentes formatos de configuração
+        if 'Parametro' in df.columns and 'Valor' in df.columns:
+            # Formato chave-valor
+            for _, row in df.iterrows():
+                parametro = str(row['Parametro']).lower().replace(' ', '_')
+                valor = row['Valor']
+
+                # Mapear parâmetros conhecidos
+                if 'potencia' in parametro:
+                    config['potencia_sistema'] = float(valor) if pd.notna(valor) else 100.0
+                elif 'eficiencia' in parametro:
+                    config['eficiencia'] = float(valor) if pd.notna(valor) else 0.85
+                elif 'tarifa' in parametro:
+                    config['tarifa_energia'] = float(valor) if pd.notna(valor) else 0.75
+                elif 'investimento' in parametro or 'custo' in parametro:
+                    config['custo_investimento'] = float(valor) if pd.notna(valor) else 0.0
+
+        # Valores padrão se não encontrados
+        config.setdefault('potencia_sistema', 100.0)
+        config.setdefault('eficiencia', 0.85)
+        config.setdefault('tarifa_energia', 0.75)
+        config.setdefault('custo_investimento', 0.0)
+
+        # Geração mensal padrão
+        config.setdefault('geracao_mensal', [8000] * 12)
+
+        return config
+
+    def _processar_aba_unidades(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Processa aba de unidades do Excel"""
+        unidades = []
+
+        for index, row in df.iterrows():
+            unidade = {
+                'nome': str(row.get('Nome', f'Unidade {index + 1}')),
+                'tipo_ligacao': str(row.get('Tipo_Ligacao', 'monofasica')).lower(),
+                'consumo_mensal': [0] * 12,
+                'percentual_alocacao': float(row.get('Percentual', 0.0)) if pd.notna(row.get('Percentual')) else 0.0
+            }
+
+            # Processar consumo mensal se estiver nas colunas
+            meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+                     'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+            for i, mes in enumerate(meses):
+                if mes in row and pd.notna(row[mes]):
+                    unidade['consumo_mensal'][i] = float(row[mes])
+
+            unidades.append(unidade)
+
+        return unidades
+
+    def _processar_aba_consumos(self, df: pd.DataFrame) -> Dict[str, List[float]]:
+        """Processa aba de consumos do Excel"""
+        consumos = {}
+
+        # Assumir que primeira coluna é identificador da unidade
+        if len(df.columns) >= 13:  # ID + 12 meses
+            for _, row in df.iterrows():
+                id_unidade = str(row.iloc[0])
+                consumo_mensal = []
+
+                for i in range(1, min(13, len(row))):
+                    valor = row.iloc[i]
+                    consumo_mensal.append(float(valor) if pd.notna(valor) else 0.0)
+
+                # Completar com zeros se necessário
+                while len(consumo_mensal) < 12:
+                    consumo_mensal.append(0.0)
+
+                consumos[id_unidade] = consumo_mensal
+
+        return consumos
+
+    def _converter_excel_para_sistema(self, dados_excel: Dict[str, Any]) -> SistemaEnergia:
+        """Converte dados do Excel para objeto SistemaEnergia"""
+
+        # Criar configuração
+        config_data = dados_excel.get('configuracao', {})
+        config = ConfiguracaoSistema(
+            potencia_instalada_kw=config_data.get('potencia_sistema', 100.0),
+            eficiencia_sistema=config_data.get('eficiencia', 0.85),
+            tarifa_energia_kwh=config_data.get('tarifa_energia', 0.75),
+            geracao_mensal_kwh=config_data.get('geracao_mensal', [8000] * 12),
+            custo_investimento=config_data.get('custo_investimento', 0.0)
+        )
+
+        # Criar unidades
+        unidades_data = dados_excel.get('unidades', [])
+        unidades = []
+
+        for i, unidade_data in enumerate(unidades_data):
+            # Mapear tipo de ligação
+            tipo_ligacao_str = unidade_data.get('tipo_ligacao', 'monofasica').lower()
+            if 'trifasica' in tipo_ligacao_str or 'tri' in tipo_ligacao_str:
+                tipo_ligacao = TipoLigacao.TRIFASICA
+            elif 'bifasica' in tipo_ligacao_str or 'bi' in tipo_ligacao_str:
+                tipo_ligacao = TipoLigacao.BIFASICA
+            else:
+                tipo_ligacao = TipoLigacao.MONOFASICA
+
+            unidade = UnidadeConsumidora(
+                id=f"migrado_{i + 1:03d}",
+                nome=unidade_data.get('nome', f'Unidade {i + 1}'),
+                tipo_ligacao=tipo_ligacao,
+                consumo_mensal_kwh=unidade_data.get('consumo_mensal', [0] * 12),
+                percentual_energia_alocada=unidade_data.get('percentual_alocacao', 0.0)
+            )
+
+            unidades.append(unidade)
+
+        # Aplicar consumos se disponíveis separadamente
+        consumos_data = dados_excel.get('consumos', {})
+        for unidade in unidades:
+            if unidade.id in consumos_data:
+                unidade.consumo_mensal_kwh = consumos_data[unidade.id]
+
+        # Criar sistema
+        sistema = SistemaEnergia(
+            configuracao=config,
+            unidades=unidades,
+            versao_sistema="2.0-Migrado-Excel"
+        )
+
+        # Armazenar dados originais
+        sistema.dados_importacao = dados_excel
+
+        return sistema
+
+    def _processar_consumos_csv(self, df: pd.DataFrame, sistema: SistemaEnergia):
+        """Processa consumos de arquivo CSV"""
+
+        # Mapear colunas
+        colunas_id = ['id', 'ID', 'Id', 'nome', 'Nome', 'unidade', 'Unidade']
+        coluna_id = None
+
+        for col in colunas_id:
+            if col in df.columns:
+                coluna_id = col
+                break
+
+        if coluna_id is None:
+            raise ErroMigracaoDados("Coluna de identificação não encontrada no CSV")
+
+        # Processar cada linha
+        for _, row in df.iterrows():
+            id_unidade = str(row[coluna_id])
+
+            # Buscar unidade correspondente
+            unidade = None
+            for u in sistema.unidades:
+                if u.id == id_unidade or u.nome == id_unidade:
+                    unidade = u
+                    break
+
+            if unidade is None:
+                self._log(f"Unidade não encontrada para ID: {id_unidade}")
+                continue
+
+            # Atualizar consumos
+            meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+                     'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+            for i, mes in enumerate(meses):
+                if mes in row and pd.notna(row[mes]):
+                    unidade.consumo_mensal_kwh[i] = float(row[mes])
+
+    def _validar_excel_legacy(self, caminho_arquivo: str) -> Dict[str, Any]:
+        """Valida arquivo Excel legacy"""
+        resultado = {'erros': [], 'avisos': [], 'estatisticas': {}}
+
+        try:
+            excel_data = pd.ExcelFile(caminho_arquivo)
+            resultado['estatisticas']['abas_encontradas'] = len(excel_data.sheet_names)
+            resultado['estatisticas']['nomes_abas'] = excel_data.sheet_names
+
+            # Verificar abas essenciais
+            abas_essenciais = ['Configuracao', 'Config', 'Unidades', 'Consumidores']
+            abas_encontradas = [aba for aba in abas_essenciais if aba in excel_data.sheet_names]
+
+            if not abas_encontradas:
+                resultado['avisos'].append("Nenhuma aba padrão encontrada, tentarei processar as disponíveis")
+
+        except Exception as e:
+            resultado['erros'].append(f"Erro ao validar Excel: {e}")
+
+        return resultado
+
+    def _validar_json_legacy(self, caminho_arquivo: str) -> Dict[str, Any]:
+        """Valida arquivo JSON legacy"""
+        resultado = {'erros': [], 'avisos': [], 'estatisticas': {}}
+
+        try:
+            with open(caminho_arquivo, 'r', encoding='utf-8') as f:
+                dados = json.load(f)
+
+            # Verificar estrutura básica
+            if not isinstance(dados, dict):
+                resultado['erros'].append("JSON deve ser um objeto")
+                return resultado
+
+            resultado['estatisticas']['chaves_principais'] = list(dados.keys())
+
+            # Verificar chaves essenciais
+            chaves_essenciais = ['configuracao', 'unidades']
+            for chave in chaves_essenciais:
+                if chave not in dados:
+                    resultado['avisos'].append(f"Chave '{chave}' não encontrada")
+
+        except json.JSONDecodeError as e:
+            resultado['erros'].append(f"JSON inválido: {e}")
+        except Exception as e:
+            resultado['erros'].append(f"Erro ao validar JSON: {e}")
+
+        return resultado
+
+    def _validar_csv_legacy(self, caminho_arquivo: str) -> Dict[str, Any]:
+        """Valida arquivo CSV legacy"""
+        resultado = {'erros': [], 'avisos': [], 'estatisticas': {}}
+
+        try:
+            df = pd.read_csv(caminho_arquivo, encoding='utf-8')
+            resultado['estatisticas']['linhas'] = len(df)
+            resultado['estatisticas']['colunas'] = len(df.columns)
+            resultado['estatisticas']['nomes_colunas'] = list(df.columns)
+
+            # Verificar se tem pelo menos uma coluna de ID
+            colunas_id = ['id', 'ID', 'nome', 'Nome']
+            tem_id = any(col in df.columns for col in colunas_id)
+
+            if not tem_id:
+                resultado['erros'].append("Nenhuma coluna de identificação encontrada")
+
+        except Exception as e:
+            resultado['erros'].append(f"Erro ao validar CSV: {e}")
+
+        return resultado
+
+    def _log(self, mensagem: str):
+        """Adiciona mensagem ao log"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.log_migracoes.append(f"[{timestamp}] {mensagem}")
+
+
+# Classe auxiliar para migração em lote
+class MigradorLote:
+    """Migrador para processar múltiplos arquivos"""
+
+    def __init__(self):
+        self.migrador = MigradorDados()
+        self.resultados = []
+
+    def migrar_diretorio(self, caminho_diretorio: str, padrao_arquivos: str = "*") -> List[Dict[str, Any]]:
+        """
+        Migra todos os arquivos de um diretório
+        """
+        try:
+            diretorio = Path(caminho_diretorio)
+            if not diretorio.exists():
+                raise ErroMigracaoDados(f"Diretório não encontrado: {caminho_diretorio}")
+
+            arquivos = list(diretorio.glob(padrao_arquivos))
+            self.resultados = []
+
+            for arquivo in arquivos:
+                resultado = self._migrar_arquivo_individual(str(arquivo))
+                self.resultados.append(resultado)
+
+            return self.resultados
+
+        except Exception as e:
+            raise ErroMigracaoDados(f"Erro na migração em lote: {e}")
+
+    def _migrar_arquivo_individual(self, caminho_arquivo: str) -> Dict[str, Any]:
+        """Migra um arquivo individual"""
+        resultado = {
+            'arquivo': caminho_arquivo,
+            'sucesso': False,
+            'sistema': None,
+            'erros': [],
+            'log': []
         }
 
-        # Normaliza meses na geração mensal
-        if 'geracao_mensal' in dados_migrados['configuracao']:
-            geracao_normalizada = {}
-            for mes, valor in dados_migrados['configuracao']['geracao_mensal'].items():
-                mes_normalizado = meses_mapping.get(mes, mes)
-                geracao_normalizada[mes_normalizado] = valor
-            dados_migrados['configuracao']['geracao_mensal'] = geracao_normalizada
+        try:
+            # Validar arquivo
+            validacao = self.migrador.validar_arquivo_legacy(caminho_arquivo)
+            if not validacao['valido']:
+                resultado['erros'] = validacao['erros']
+                return resultado
 
-        # Normaliza meses nos consumos
-        for codigo_uc, consumos_uc in dados_migrados['consumos'].items():
-            consumos_normalizados = {}
-            for mes, valor in consumos_uc.items():
-                mes_normalizado = meses_mapping.get(mes, mes)
-                consumos_normalizados[mes_normalizado] = valor
-            dados_migrados['consumos'][codigo_uc] = consumos_normalizados
+            # Migrar baseado no tipo
+            extensao = Path(caminho_arquivo).suffix.lower()
 
-        # 4. Garante que todas as unidades têm os campos obrigatórios
-        for unidade in dados_migrados['unidades']:
-            if 'endereco' not in unidade:
-                unidade['endereco'] = ""
-            if 'tipo_ligacao' not in unidade:
-                unidade['tipo_ligacao'] = 'mono'  # Valor padrão
+            if extensao in ['.xlsx', '.xls']:
+                sistema = self.migrador.migrar_excel_legacy(caminho_arquivo)
+            elif extensao == '.json':
+                sistema = self.migrador.migrar_json_legacy(caminho_arquivo)
+            else:
+                resultado['erros'].append(f"Tipo de arquivo não suportado: {extensao}")
+                return resultado
 
-        return dados_migrados
+            resultado['sistema'] = sistema
+            resultado['sucesso'] = True
+            resultado['log'] = self.migrador.obter_log_migracoes()
 
-    def adicionar_versao_aos_dados(self, dados: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Adiciona a versão atual aos dados antes de salvá-los.
-        Deve ser chamado pelo RepositorioDados antes de salvar.
-        """
-        dados_com_versao = dados.copy()
-        dados_com_versao['versao'] = self.VERSAO_ATUAL
-        return dados_com_versao
+        except Exception as e:
+            resultado['erros'].append(str(e))
+
+        return resultado
 
 
-# --- Bloco de Teste ---
-if __name__ == "__main__":
-    print("--- Teste: dados/migrador.py ---")
-
+# Funções de conveniência
+def migrar_arquivo_legacy(caminho_arquivo: str) -> SistemaEnergia:
+    """Função de conveniência para migrar um arquivo legacy"""
     migrador = MigradorDados()
 
-    print("\n--- Teste 1: Dados já na versão atual (não precisa migrar) ---")
-    dados_atuais = {
-        'versao': '1.0',
-        'configuracao': {'eficiencia': 80.0},
-        'unidades': [],
-        'consumos': {}
-    }
-    resultado = migrador.migrar_se_necessario(dados_atuais)
-    assert resultado['versao'] == '1.0'
-    print("✅ Dados já atuais - nenhuma migração necessária.")
+    extensao = Path(caminho_arquivo).suffix.lower()
 
-    print("\n--- Teste 2: Migração da versão 0.9 para 1.0 ---")
-    dados_antigos = {
-        'configuracao': {
-            'potencia_inversor': 5000,
-            'geracao_mensal': {'Jan': 800, 'Fev': 750}  # Meses abreviados
-        },
-        'unidades': [
-            {'codigo': 'UC001', 'nome': 'Casa Teste', 'tipo_ligacao': 'mono'}
-        ],
-        'consumos': {
-            'UC001': {'Jan': 200, 'Fev': 180}  # Meses abreviados
-        }
-    }
+    if extensao in ['.xlsx', '.xls']:
+        return migrador.migrar_excel_legacy(caminho_arquivo)
+    elif extensao == '.json':
+        return migrador.migrar_json_legacy(caminho_arquivo)
+    else:
+        raise ErroMigracaoDados(f"Tipo de arquivo não suportado: {extensao}")
 
-    resultado_migrado = migrador.migrar_se_necessario(dados_antigos)
 
-    # Verifica se a versão foi adicionada
-    assert resultado_migrado['versao'] == '1.0'
-
-    # Verifica se os meses foram normalizados
-    assert 'Janeiro' in resultado_migrado['configuracao']['geracao_mensal']
-    assert 'Fevereiro' in resultado_migrado['configuracao']['geracao_mensal']
-    assert 'Janeiro' in resultado_migrado['consumos']['UC001']
-    assert 'Fevereiro' in resultado_migrado['consumos']['UC001']
-
-    # Verifica se campos padrão foram adicionados
-    assert 'endereco' in resultado_migrado['unidades'][0]
-    assert resultado_migrado['unidades'][0]['endereco'] == ""
-
-    print("✅ Migração 0.9 → 1.0 realizada com sucesso.")
-    print(f"   Meses normalizados: {list(resultado_migrado['configuracao']['geracao_mensal'].keys())}")
-
-    print("\n--- Teste 3: Adicionar versão aos dados ---")
-    dados_sem_versao = {'configuracao': {}, 'unidades': [], 'consumos': {}}
-    dados_com_versao = migrador.adicionar_versao_aos_dados(dados_sem_versao)
-    assert dados_com_versao['versao'] == '1.0'
-    print("✅ Versão adicionada aos dados com sucesso.")
-
-    print("\n--- Teste 4: Erro ao tentar migrar versão não suportada ---")
-    dados_versao_inexistente = {'versao': '2.0'}
-    try:
-        migrador.migrar_se_necessario(dados_versao_inexistente)
-        assert False, "Deveria ter levantado uma exceção"
-    except ErroCarregamentoDados as e:
-        print(f"✅ Erro esperado capturado: {e}")
-
-    print("\nTeste de Migrador de Dados concluído com sucesso!")
+def validar_antes_migrar(caminho_arquivo: str) -> bool:
+    """Função de conveniência para validar arquivo antes da migração"""
+    migrador = MigradorDados()
+    validacao = migrador.validar_arquivo_legacy(caminho_arquivo)
+    return validacao['valido']
