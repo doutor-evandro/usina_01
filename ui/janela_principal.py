@@ -83,10 +83,14 @@ class InterfacePrincipal:
         self.notebook = ttk.Notebook(self.frame_principal)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        # Criar abas
-        self.criar_aba_dashboard()
-        self.criar_aba_configuracoes()
-        self.criar_aba_relatorios()
+        # ⭐ NOVA ORDEM DOS MENUS CONFORME SOLICITADO:
+        # 📊 Dashboard | 💰 Faturamento | 💳 Créditos | 🏠 Unidades | 📋 Relatórios | ⚙️ Config
+        self.criar_aba_dashboard()      # 1º - 📊 Dashboard
+        self.criar_aba_faturamento()    # 2º - 💰 Faturamento (NOVO)
+        self.criar_aba_creditos()       # 3º - 💳 Créditos (NOVO)
+        self.criar_aba_unidades()       # 4º - 🏠 Unidades (NOVO)
+        self.criar_aba_relatorios()     # 5º - 📋 Relatórios
+        self.criar_aba_configuracoes()  # 6º - ⚙️ Config (renomeado)
 
         # Menu superior
         self.criar_menu()
@@ -138,6 +142,263 @@ class InterfacePrincipal:
         frame_resumo.pack(fill=tk.X, padx=5, pady=5)
 
         self.criar_resumo_rapido(frame_resumo)
+
+    def criar_aba_faturamento(self):
+        """Cria a aba de faturamento (NOVA)"""
+        frame_faturamento = ttk.Frame(self.notebook)
+        self.notebook.add(frame_faturamento, text="💰 Faturamento")
+
+        # Frame principal do faturamento
+        frame_principal_fat = ttk.LabelFrame(frame_faturamento, text="Gestão de Faturamento", padding=20)
+        frame_principal_fat.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # Título da seção
+        ttk.Label(frame_principal_fat, text="💰 MÓDULO DE FATURAMENTO",
+                 font=('Arial', 16, 'bold')).pack(pady=20)
+
+        # Frame para resumo financeiro
+        frame_resumo_fat = ttk.LabelFrame(frame_principal_fat, text="Resumo Financeiro Mensal", padding=10)
+        frame_resumo_fat.pack(fill=tk.X, pady=10)
+
+        # Cards de faturamento
+        frame_cards_fat = ttk.Frame(frame_resumo_fat)
+        frame_cards_fat.pack(fill=tk.X)
+
+        for i in range(4):
+            frame_cards_fat.columnconfigure(i, weight=1)
+
+        # Cards financeiros
+        self.card_receita = self.criar_card(frame_cards_fat, "Receita Mensal", "R$ 0,00", self.cores['sucesso'], 0, 0)
+        self.card_economia_fat = self.criar_card(frame_cards_fat, "Economia Gerada", "R$ 0,00", self.cores['primaria'], 0, 1)
+        self.card_creditos_fat = self.criar_card(frame_cards_fat, "Créditos Ativos", "0 kWh", self.cores['secundaria'], 0, 2)
+        self.card_faturamento_anual = self.criar_card(frame_cards_fat, "Faturamento Anual", "R$ 0,00", "#28A745", 0, 3)
+
+        # Área de controles de faturamento
+        frame_controles_fat = ttk.LabelFrame(frame_principal_fat, text="Controles de Faturamento", padding=10)
+        frame_controles_fat.pack(fill=tk.X, pady=10)
+
+        ttk.Button(frame_controles_fat, text="📊 Gerar Fatura Mensal",
+                  command=self.gerar_fatura_mensal).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_controles_fat, text="📋 Relatório Financeiro",
+                  command=self.relatorio_financeiro).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_controles_fat, text="💾 Exportar Dados",
+                  command=self.exportar_faturamento).pack(side=tk.LEFT, padx=5)
+
+        # Área de informações detalhadas
+        frame_detalhes_fat = ttk.LabelFrame(frame_principal_fat, text="Detalhes Financeiros", padding=10)
+        frame_detalhes_fat.pack(fill=tk.BOTH, expand=True, pady=10)
+
+        # Text widget para mostrar detalhes
+        self.text_faturamento = tk.Text(frame_detalhes_fat, wrap=tk.WORD, font=('Courier', 10), height=8)
+        scroll_fat = ttk.Scrollbar(frame_detalhes_fat, orient=tk.VERTICAL, command=self.text_faturamento.yview)
+        self.text_faturamento.configure(yscrollcommand=scroll_fat.set)
+
+        self.text_faturamento.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_fat.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Carregar dados iniciais do faturamento
+        self.carregar_dados_faturamento()
+
+    def criar_aba_creditos(self):
+        """Cria a aba de créditos (NOVA)"""
+        frame_creditos = ttk.Frame(self.notebook)
+        self.notebook.add(frame_creditos, text="💳 Créditos")
+
+        # Frame principal dos créditos
+        frame_principal_cred = ttk.LabelFrame(frame_creditos, text="Gestão de Créditos Energéticos", padding=20)
+        frame_principal_cred.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # Título
+        ttk.Label(frame_principal_cred, text="💳 SISTEMA DE CRÉDITOS ENERGÉTICOS",
+                 font=('Arial', 16, 'bold')).pack(pady=20)
+
+        # Frame para saldo de créditos
+        frame_saldo_cred = ttk.LabelFrame(frame_principal_cred, text="Saldo de Créditos", padding=10)
+        frame_saldo_cred.pack(fill=tk.X, pady=10)
+
+        # Cards de créditos
+        frame_cards_cred = ttk.Frame(frame_saldo_cred)
+        frame_cards_cred.pack(fill=tk.X)
+
+        for i in range(4):
+            frame_cards_cred.columnconfigure(i, weight=1)
+
+        # Cards de créditos
+        self.card_creditos_total = self.criar_card(frame_cards_cred, "Créditos Totais", "0 kWh", self.cores['primaria'], 0, 0)
+        self.card_creditos_mes = self.criar_card(frame_cards_cred, "Créditos do Mês", "0 kWh", self.cores['sucesso'], 0, 1)
+        self.card_creditos_utilizados = self.criar_card(frame_cards_cred, "Créditos Utilizados", "0 kWh", self.cores['secundaria'], 0, 2)
+        self.card_validade_creditos = self.criar_card(frame_cards_cred, "Próximo Vencimento", "-- meses", "#6F42C1", 0, 3)
+
+        # Controles de créditos
+        frame_controles_cred = ttk.LabelFrame(frame_principal_cred, text="Controles de Créditos", padding=10)
+        frame_controles_cred.pack(fill=tk.X, pady=10)
+
+        ttk.Button(frame_controles_cred, text="📊 Histórico de Créditos",
+                  command=self.historico_creditos).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_controles_cred, text="⚡ Simular Consumo",
+                  command=self.simular_consumo_creditos).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_controles_cred, text="📋 Relatório de Créditos",
+                  command=self.relatorio_creditos).pack(side=tk.LEFT, padx=5)
+
+        # Área de detalhes dos créditos
+        frame_detalhes_cred = ttk.LabelFrame(frame_principal_cred, text="Detalhes dos Créditos", padding=10)
+        frame_detalhes_cred.pack(fill=tk.BOTH, expand=True, pady=10)
+
+        # Text widget para mostrar detalhes
+        self.text_creditos = tk.Text(frame_detalhes_cred, wrap=tk.WORD, font=('Courier', 10), height=8)
+        scroll_cred = ttk.Scrollbar(frame_detalhes_cred, orient=tk.VERTICAL, command=self.text_creditos.yview)
+        self.text_creditos.configure(yscrollcommand=scroll_cred.set)
+
+        self.text_creditos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_cred.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Carregar dados iniciais dos créditos
+        self.carregar_dados_creditos()
+
+    def criar_aba_unidades(self):
+        """Cria a aba de unidades (NOVA)"""
+        frame_unidades = ttk.Frame(self.notebook)
+        self.notebook.add(frame_unidades, text="🏠 Unidades")
+
+        # Frame principal das unidades
+        frame_principal_uni = ttk.LabelFrame(frame_unidades, text="Gestão de Unidades Consumidoras", padding=20)
+        frame_principal_uni.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # Título
+        ttk.Label(frame_principal_uni, text="🏠 UNIDADES CONSUMIDORAS",
+                 font=('Arial', 16, 'bold')).pack(pady=20)
+
+        # Frame para resumo das unidades
+        frame_resumo_uni = ttk.LabelFrame(frame_principal_uni, text="Resumo das Unidades", padding=10)
+        frame_resumo_uni.pack(fill=tk.X, pady=10)
+
+        # Cards de unidades
+        frame_cards_uni = ttk.Frame(frame_resumo_uni)
+        frame_cards_uni.pack(fill=tk.X)
+
+        for i in range(4):
+            frame_cards_uni.columnconfigure(i, weight=1)
+
+        # Cards das unidades
+        self.card_unidades_ativas = self.criar_card(frame_cards_uni, "Unidades Ativas", "0", self.cores['sucesso'], 0, 0)
+        self.card_unidades_total = self.criar_card(frame_cards_uni, "Total de Unidades", "0", self.cores['primaria'], 0, 1)
+        self.card_consumo_medio = self.criar_card(frame_cards_uni, "Consumo Médio", "0 kWh", self.cores['secundaria'], 0, 2)
+        self.card_maior_consumidor = self.criar_card(frame_cards_uni, "Maior Consumidor", "-- kWh", "#28A745", 0, 3)
+
+        # Controles das unidades
+        frame_controles_uni = ttk.LabelFrame(frame_principal_uni, text="Controles das Unidades", padding=10)
+        frame_controles_uni.pack(fill=tk.X, pady=10)
+
+        ttk.Button(frame_controles_uni, text="➕ Adicionar Unidade",
+                  command=self.adicionar_unidade).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_controles_uni, text="✏️ Editar Unidade",
+                  command=self.editar_unidade).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_controles_uni, text="📊 Análise Detalhada",
+                  command=self.analise_unidades).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_controles_uni, text="📋 Lista Completa",
+                  command=self.listar_unidades).pack(side=tk.LEFT, padx=5)
+
+        # Lista de unidades
+        frame_lista_uni = ttk.LabelFrame(frame_principal_uni, text="Lista de Unidades", padding=10)
+        frame_lista_uni.pack(fill=tk.BOTH, expand=True, pady=10)
+
+        # Treeview para listar unidades
+        columns = ('Código', 'Nome', 'Tipo', 'Status', 'Consumo Mensal')
+        self.tree_unidades = ttk.Treeview(frame_lista_uni, columns=columns, show='headings', height=8)
+
+        for col in columns:
+            self.tree_unidades.heading(col, text=col)
+            self.tree_unidades.column(col, width=120)
+
+        # Scrollbar para a lista
+        scroll_uni = ttk.Scrollbar(frame_lista_uni, orient=tk.VERTICAL, command=self.tree_unidades.yview)
+        self.tree_unidades.configure(yscrollcommand=scroll_uni.set)
+
+        self.tree_unidades.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_uni.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Carregar dados iniciais das unidades
+        self.carregar_dados_unidades()
+
+    def criar_aba_relatorios(self):
+        """Cria a aba de relatórios"""
+        frame_relatorios = ttk.Frame(self.notebook)
+        self.notebook.add(frame_relatorios, text="📋 Relatórios")
+
+        # Frame superior - Opções de relatório
+        frame_opcoes = ttk.LabelFrame(frame_relatorios, text="Gerar Relatórios", padding=10)
+        frame_opcoes.pack(fill=tk.X, padx=10, pady=5)
+
+        # Seleção de ano
+        ttk.Label(frame_opcoes, text="Ano:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.var_ano_relatorio = tk.IntVar(value=datetime.now().year)
+        self.spin_ano = ttk.Spinbox(frame_opcoes, from_=2020, to=2030, textvariable=self.var_ano_relatorio, width=10)
+        self.spin_ano.grid(row=0, column=1, padx=10, pady=5)
+
+        # Botões de relatório
+        frame_botoes_rel = ttk.Frame(frame_opcoes)
+        frame_botoes_rel.grid(row=1, column=0, columnspan=2, pady=10)
+
+        ttk.Button(frame_botoes_rel, text="📊 Relatório Completo",
+                   command=self.gerar_relatorio_completo).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botoes_rel, text="📋 Relatório Resumido",
+                   command=self.gerar_relatorio_resumido).pack(side=tk.LEFT, padx=5)
+
+        # Frame central - Visualização do relatório
+        frame_visualizacao = ttk.LabelFrame(frame_relatorios, text="Visualização", padding=10)
+        frame_visualizacao.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # Text widget com scroll
+        self.text_relatorio = tk.Text(frame_visualizacao, wrap=tk.WORD, font=('Courier', 10))
+        scroll_relatorio = ttk.Scrollbar(frame_visualizacao, orient=tk.VERTICAL, command=self.text_relatorio.yview)
+        self.text_relatorio.configure(yscrollcommand=scroll_relatorio.set)
+
+        self.text_relatorio.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_relatorio.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def criar_aba_configuracoes(self):
+        """Cria a aba de configurações (RENOMEADA para Config)"""
+        frame_config = ttk.Frame(self.notebook)
+        self.notebook.add(frame_config, text="⚙️ Config")  # ⭐ RENOMEADO
+
+        # Configurações do Sistema
+        frame_sistema = ttk.LabelFrame(frame_config, text="Configurações do Sistema", padding=20)
+        frame_sistema.pack(fill=tk.X, padx=20, pady=20)
+
+        # Potência
+        ttk.Label(frame_sistema, text="Potência Instalada (kW):").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.var_potencia = tk.DoubleVar()
+        self.entry_potencia = ttk.Entry(frame_sistema, textvariable=self.var_potencia, width=15)
+        self.entry_potencia.grid(row=0, column=1, padx=10, pady=5)
+
+        # Eficiência
+        ttk.Label(frame_sistema, text="Eficiência do Sistema (%):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.var_eficiencia = tk.DoubleVar()
+        self.entry_eficiencia = ttk.Entry(frame_sistema, textvariable=self.var_eficiencia, width=15)
+        self.entry_eficiencia.grid(row=1, column=1, padx=10, pady=5)
+
+        # Tarifa
+        ttk.Label(frame_sistema, text="Tarifa de Energia (R$/kWh):").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.var_tarifa = tk.DoubleVar()
+        self.entry_tarifa = ttk.Entry(frame_sistema, textvariable=self.var_tarifa, width=15)
+        self.entry_tarifa.grid(row=2, column=1, padx=10, pady=5)
+
+        # Investimento
+        ttk.Label(frame_sistema, text="Custo do Investimento (R$):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.var_investimento = tk.DoubleVar()
+        self.entry_investimento = ttk.Entry(frame_sistema, textvariable=self.var_investimento, width=15)
+        self.entry_investimento.grid(row=3, column=1, padx=10, pady=5)
+
+        # Botões
+        frame_botoes_config = ttk.Frame(frame_sistema)
+        frame_botoes_config.grid(row=4, column=0, columnspan=2, pady=10)
+
+        ttk.Button(frame_botoes_config, text="💾 Salvar Configurações",
+                   command=self.salvar_configuracoes).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_botoes_config, text="🔄 Restaurar Padrão",
+                   command=self.restaurar_configuracoes).pack(side=tk.LEFT, padx=5)
+
+    # ========== MÉTODOS AUXILIARES (mantidos iguais) ==========
 
     def criar_indicadores(self, parent):
         """Cria os indicadores principais"""
@@ -284,84 +545,6 @@ class InterfacePrincipal:
         self.label_investimento = ttk.Label(frame_info, text="R$ 450.000,00")
         self.label_investimento.grid(row=0, column=5, sticky=tk.W, padx=5)
 
-    def criar_aba_configuracoes(self):
-        """Cria a aba de configurações"""
-        frame_config = ttk.Frame(self.notebook)
-        self.notebook.add(frame_config, text="⚙️ Configurações")
-
-        # Configurações do Sistema
-        frame_sistema = ttk.LabelFrame(frame_config, text="Configurações do Sistema", padding=20)
-        frame_sistema.pack(fill=tk.X, padx=20, pady=20)
-
-        # Potência
-        ttk.Label(frame_sistema, text="Potência Instalada (kW):").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.var_potencia = tk.DoubleVar()
-        self.entry_potencia = ttk.Entry(frame_sistema, textvariable=self.var_potencia, width=15)
-        self.entry_potencia.grid(row=0, column=1, padx=10, pady=5)
-
-        # Eficiência
-        ttk.Label(frame_sistema, text="Eficiência do Sistema (%):").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.var_eficiencia = tk.DoubleVar()
-        self.entry_eficiencia = ttk.Entry(frame_sistema, textvariable=self.var_eficiencia, width=15)
-        self.entry_eficiencia.grid(row=1, column=1, padx=10, pady=5)
-
-        # Tarifa
-        ttk.Label(frame_sistema, text="Tarifa de Energia (R$/kWh):").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.var_tarifa = tk.DoubleVar()
-        self.entry_tarifa = ttk.Entry(frame_sistema, textvariable=self.var_tarifa, width=15)
-        self.entry_tarifa.grid(row=2, column=1, padx=10, pady=5)
-
-        # Investimento
-        ttk.Label(frame_sistema, text="Custo do Investimento (R$):").grid(row=3, column=0, sticky=tk.W, pady=5)
-        self.var_investimento = tk.DoubleVar()
-        self.entry_investimento = ttk.Entry(frame_sistema, textvariable=self.var_investimento, width=15)
-        self.entry_investimento.grid(row=3, column=1, padx=10, pady=5)
-
-        # Botões
-        frame_botoes_config = ttk.Frame(frame_sistema)
-        frame_botoes_config.grid(row=4, column=0, columnspan=2, pady=10)
-
-        ttk.Button(frame_botoes_config, text="💾 Salvar Configurações",
-                   command=self.salvar_configuracoes).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botoes_config, text="🔄 Restaurar Padrão",
-                   command=self.restaurar_configuracoes).pack(side=tk.LEFT, padx=5)
-
-    def criar_aba_relatorios(self):
-        """Cria a aba de relatórios"""
-        frame_relatorios = ttk.Frame(self.notebook)
-        self.notebook.add(frame_relatorios, text="📋 Relatórios")
-
-        # Frame superior - Opções de relatório
-        frame_opcoes = ttk.LabelFrame(frame_relatorios, text="Gerar Relatórios", padding=10)
-        frame_opcoes.pack(fill=tk.X, padx=10, pady=5)
-
-        # Seleção de ano
-        ttk.Label(frame_opcoes, text="Ano:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.var_ano_relatorio = tk.IntVar(value=datetime.now().year)
-        self.spin_ano = ttk.Spinbox(frame_opcoes, from_=2020, to=2030, textvariable=self.var_ano_relatorio, width=10)
-        self.spin_ano.grid(row=0, column=1, padx=10, pady=5)
-
-        # Botões de relatório
-        frame_botoes_rel = ttk.Frame(frame_opcoes)
-        frame_botoes_rel.grid(row=1, column=0, columnspan=2, pady=10)
-
-        ttk.Button(frame_botoes_rel, text="📊 Relatório Completo",
-                   command=self.gerar_relatorio_completo).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botoes_rel, text="📋 Relatório Resumido",
-                   command=self.gerar_relatorio_resumido).pack(side=tk.LEFT, padx=5)
-
-        # Frame central - Visualização do relatório
-        frame_visualizacao = ttk.LabelFrame(frame_relatorios, text="Visualização", padding=10)
-        frame_visualizacao.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-        # Text widget com scroll
-        self.text_relatorio = tk.Text(frame_visualizacao, wrap=tk.WORD, font=('Courier', 10))
-        scroll_relatorio = ttk.Scrollbar(frame_visualizacao, orient=tk.VERTICAL, command=self.text_relatorio.yview)
-        self.text_relatorio.configure(yscrollcommand=scroll_relatorio.set)
-
-        self.text_relatorio.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scroll_relatorio.pack(side=tk.RIGHT, fill=tk.Y)
-
     def criar_barra_status(self):
         """Cria a barra de status"""
         self.barra_status = ttk.Frame(self.root)
@@ -375,7 +558,152 @@ class InterfacePrincipal:
                                     relief=tk.SUNKEN)
         self.label_data.pack(side=tk.RIGHT, padx=5, pady=2)
 
-    # ========== MÉTODOS DE ATUALIZAÇÃO ==========
+    # ========== NOVOS MÉTODOS PARA AS NOVAS ABAS ==========
+
+    def carregar_dados_faturamento(self):
+        """Carrega dados iniciais do faturamento"""
+        try:
+            # Dados simulados para demonstração
+            dados_faturamento = """RESUMO FINANCEIRO MENSAL
+=============================
+
+💰 RECEITAS:
+- Economia gerada: R$ 8.500,00
+- Créditos utilizados: R$ 2.300,00
+- Total mensal: R$ 10.800,00
+
+📊 ANÁLISE:
+- Economia vs mês anterior: +12%
+- Projeção anual: R$ 129.600,00
+- ROI acumulado: 18.5%
+
+📋 PRÓXIMAS AÇÕES:
+- Revisão tarifária: 15/12/2024
+- Análise de créditos: Mensal
+- Relatório anual: Janeiro/2025
+"""
+            self.text_faturamento.delete(1.0, tk.END)
+            self.text_faturamento.insert(1.0, dados_faturamento)
+
+            # Atualizar cards
+            self.card_receita.config(text="R$ 10.800,00")
+            self.card_economia_fat.config(text="R$ 8.500,00")
+            self.card_creditos_fat.config(text="2.300 kWh")
+            self.card_faturamento_anual.config(text="R$ 129.600,00")
+
+        except Exception as e:
+            print(f"Erro ao carregar dados de faturamento: {e}")
+
+    def carregar_dados_creditos(self):
+        """Carrega dados iniciais dos créditos"""
+        try:
+            # Dados simulados para demonstração
+            dados_creditos = """SISTEMA DE CRÉDITOS ENERGÉTICOS
+=================================
+
+💳 SALDO ATUAL:
+- Créditos disponíveis: 15.420 kWh
+- Créditos gerados este mês: 3.200 kWh
+- Créditos utilizados: 1.850 kWh
+- Saldo líquido: +1.350 kWh
+
+⏰ VALIDADE:
+- Próximo vencimento: 8 meses
+- Créditos a vencer: 2.100 kWh
+- Recomendação: Utilizar prioritariamente
+
+�� HISTÓRICO:
+- Janeiro: +2.800 kWh
+- Fevereiro: +3.100 kWh
+- Março: +3.200 kWh (atual)
+"""
+            self.text_creditos.delete(1.0, tk.END)
+            self.text_creditos.insert(1.0, dados_creditos)
+
+            # Atualizar cards
+            self.card_creditos_total.config(text="15.420 kWh")
+            self.card_creditos_mes.config(text="3.200 kWh")
+            self.card_creditos_utilizados.config(text="1.850 kWh")
+            self.card_validade_creditos.config(text="8 meses")
+
+        except Exception as e:
+            print(f"Erro ao carregar dados de créditos: {e}")
+
+    def carregar_dados_unidades(self):
+        """Carrega dados iniciais das unidades"""
+        try:
+            # Limpar lista atual
+            for item in self.tree_unidades.get_children():
+                self.tree_unidades.delete(item)
+
+            # Dados simulados das unidades
+            unidades_exemplo = [
+                ('112761577', 'Lanchonet', 'Trifásico', '✅ Ativa', '1.739 kWh'),
+                ('114789592', 'My Beach', 'Trifásico', '✅ Ativa', '500 kWh'),
+                ('104567890', 'Loja Centro', 'Trifásico', '✅ Ativa', '1.454 kWh'),
+                ('105123456', 'Sobreloja', 'Monofásico', '✅ Ativa', '850 kWh'),
+                ('106789012', 'Escritório', 'Bifásico', '❌ Inativa', '0 kWh')
+            ]
+
+            for unidade in unidades_exemplo:
+                self.tree_unidades.insert('', tk.END, values=unidade)
+
+            # Atualizar cards
+            unidades_ativas = len([u for u in unidades_exemplo if '✅' in u[3]])
+            total_unidades = len(unidades_exemplo)
+            consumo_medio = sum([int(u[4].split()[0].replace('.', '')) for u in unidades_exemplo if '✅' in u[3]]) / unidades_ativas
+
+            self.card_unidades_ativas.config(text=str(unidades_ativas))
+            self.card_unidades_total.config(text=str(total_unidades))
+            self.card_consumo_medio.config(text=f"{consumo_medio:.0f} kWh")
+            self.card_maior_consumidor.config(text="1.739 kWh")
+
+        except Exception as e:
+            print(f"Erro ao carregar dados de unidades: {e}")
+
+    # ========== MÉTODOS DE AÇÃO DAS NOVAS ABAS ==========
+
+    def gerar_fatura_mensal(self):
+        """Gera fatura mensal"""
+        messagebox.showinfo("Faturamento", "Funcionalidade de fatura mensal em desenvolvimento...")
+
+    def relatorio_financeiro(self):
+        """Gera relatório financeiro"""
+        messagebox.showinfo("Faturamento", "Relatório financeiro em desenvolvimento...")
+
+    def exportar_faturamento(self):
+        """Exporta dados de faturamento"""
+        messagebox.showinfo("Faturamento", "Exportação de faturamento em desenvolvimento...")
+
+    def historico_creditos(self):
+        """Mostra histórico de créditos"""
+        messagebox.showinfo("Créditos", "Histórico de créditos em desenvolvimento...")
+
+    def simular_consumo_creditos(self):
+        """Simula consumo de créditos"""
+        messagebox.showinfo("Créditos", "Simulação de consumo em desenvolvimento...")
+
+    def relatorio_creditos(self):
+        """Gera relatório de créditos"""
+        messagebox.showinfo("Créditos", "Relatório de créditos em desenvolvimento...")
+
+    def adicionar_unidade(self):
+        """Adiciona nova unidade"""
+        messagebox.showinfo("Unidades", "Adição de unidade em desenvolvimento...")
+
+    def editar_unidade(self):
+        """Edita unidade existente"""
+        messagebox.showinfo("Unidades", "Edição de unidade em desenvolvimento...")
+
+    def analise_unidades(self):
+        """Análise detalhada das unidades"""
+        messagebox.showinfo("Unidades", "Análise detalhada em desenvolvimento...")
+
+    def listar_unidades(self):
+        """Lista todas as unidades"""
+        messagebox.showinfo("Unidades", "Listagem completa em desenvolvimento...")
+
+    # ========== MÉTODOS EXISTENTES (mantidos iguais) ==========
 
     def atualizar_dados(self):
         """Atualiza todos os dados da interface"""
@@ -393,6 +721,11 @@ class InterfacePrincipal:
 
             # Atualizar resumo
             self.atualizar_resumo()
+
+            # Atualizar dados das novas abas
+            self.carregar_dados_faturamento()
+            self.carregar_dados_creditos()
+            self.carregar_dados_unidades()
 
             # Atualizar status
             self.label_status.config(text="Dados atualizados com sucesso")
@@ -435,8 +768,6 @@ class InterfacePrincipal:
         """Atualiza o gráfico principal"""
         self.criar_grafico_inicial()
 
-    # ========== MÉTODOS DE AÇÃO ==========
-
     def salvar_configuracoes(self):
         """Salva as configurações do sistema"""
         try:
@@ -466,127 +797,125 @@ class InterfacePrincipal:
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao restaurar configurações: {e}")
 
-    def gerar_relatorio_completo(self):
-        """Gera relatório completo"""
-        try:
-            ano = self.var_ano_relatorio.get()
-
-            relatorio = f"""RELATÓRIO COMPLETO DO SISTEMA - {ano}
-=====================================
-
-CONFIGURAÇÕES:
-- Potência: {self.var_potencia.get():.1f} kW
-- Eficiência: {self.var_eficiencia.get():.1f}%
-- Tarifa: R$ {self.var_tarifa.get():.2f}/kWh
-- Investimento: R$ {self.var_investimento.get():,.2f}
-
-UNIDADES ATIVAS:
-"""
-
-            for unidade in self.sistema.sistema.get_unidades_ativas():
-                consumo_anual = sum(unidade.consumo_mensal_kwh)
-                relatorio += f"- {unidade.nome}: {consumo_anual:,.0f} kWh/ano\n"
-
-            # Adicionar resultados se disponíveis
+        def gerar_relatorio_completo(self):
+            """Gera relatório completo"""
             try:
-                resultados = self.sistema.calcular_resultados_anuais(ano)
-                if resultados:
-                    energia = resultados['energia']
-                    financeiro = resultados['financeiro']
+                ano = self.var_ano_relatorio.get()
 
-                    relatorio += f"""
-RESULTADOS ANUAIS:
-- Geração Total: {energia['geracao_total']:,.0f} kWh
-- Consumo Total: {energia['consumo_total']:,.0f} kWh
-- Saldo Anual: {energia['saldo_anual']:,.0f} kWh
-- Economia Total: R$ {financeiro['economia_total']:,.2f}
-- Payback: {financeiro['payback_anos']:.1f} anos
-- ROI (25 anos): {financeiro['roi_percentual']:.1f}%
-"""
-            except:
-                relatorio += "\nERRO: Não foi possível calcular resultados anuais"
+                relatorio = f"""RELATÓRIO COMPLETO DO SISTEMA - {ano}
+    =====================================
 
-            relatorio += f"""
-=====================================
-Relatório gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-Sistema de Energia Solar v2.0
-"""
+    CONFIGURAÇÕES:
+    - Potência: {self.var_potencia.get():.1f} kW
+    - Eficiência: {self.var_eficiencia.get():.1f}%
+    - Tarifa: R\$ {self.var_tarifa.get():.2f}/kWh
+    - Investimento: R\$ {self.var_investimento.get():,.2f}
 
-            self.text_relatorio.delete(1.0, tk.END)
-            self.text_relatorio.insert(1.0, relatorio)
+    UNIDADES ATIVAS:
+    """
 
-            messagebox.showinfo("Sucesso", "Relatório completo gerado!")
+                for unidade in self.sistema.sistema.get_unidades_ativas():
+                    consumo_anual = sum(unidade.consumo_mensal_kwh)
+                    relatorio += f"- {unidade.nome}: {consumo_anual:,.0f} kWh/ano\n"
 
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao gerar relatório: {e}")
+                # Adicionar resultados se disponíveis
+                try:
+                    resultados = self.sistema.calcular_resultados_anuais(ano)
+                    if resultados:
+                        energia = resultados['energia']
+                        financeiro = resultados['financeiro']
 
-    def gerar_relatorio_resumido(self):
-        """Gera relatório resumido"""
+                        relatorio += f"""
+    RESULTADOS ANUAIS:
+    - Geração Total: {energia['geracao_total']:,.0f} kWh
+    - Consumo Total: {energia['consumo_total']:,.0f} kWh
+    - Saldo Anual: {energia['saldo_anual']:,.0f} kWh
+    - Economia Total: R\$ {financeiro['economia_total']:,.2f}
+    - Payback: {financeiro['payback_anos']:.1f} anos
+    - ROI (25 anos): {financeiro['roi_percentual']:.1f}%
+    """
+                except:
+                    relatorio += "\nERRO: Não foi possível calcular resultados anuais"
+
+                relatorio += f"""
+    =====================================
+    Relatório gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+    Sistema de Energia Solar v2.0
+    """
+
+                self.text_relatorio.delete(1.0, tk.END)
+                self.text_relatorio.insert(1.0, relatorio)
+
+                messagebox.showinfo("Sucesso", "Relatório completo gerado!")
+
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao gerar relatório: {e}")
+
+        def gerar_relatorio_resumido(self):
+            """Gera relatório resumido"""
+            try:
+                ano = self.var_ano_relatorio.get()
+
+                relatorio = f"""RELATÓRIO RESUMIDO - {ano}
+    ==========================
+
+    SISTEMA:
+    - Potência: {self.var_potencia.get():.1f} kW
+    - Unidades: {len(self.sistema.sistema.get_unidades_ativas())}
+
+    RESUMO FINANCEIRO:
+    - Investimento: R\$ {self.var_investimento.get():,.2f}
+    - Tarifa: R\$ {self.var_tarifa.get():.2f}/kWh
+
+    STATUS: Sistema operacional
+    Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+    """
+
+                self.text_relatorio.delete(1.0, tk.END)
+                self.text_relatorio.insert(1.0, relatorio)
+
+                messagebox.showinfo("Sucesso", "Relatório resumido gerado!")
+
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao gerar relatório resumido: {e}")
+
+        def abrir_janela_analises(self):
+            """Abre a janela de análises avançadas"""
+            try:
+                from ui.janela_analises import JanelaAnalises
+                janela_analises = JanelaAnalises(self.sistema)
+
+            except ImportError:
+                messagebox.showinfo("Info", "Janela de análises ainda não implementada")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao abrir análises: {e}")
+
+        def mostrar_sobre(self):
+            """Mostra informações sobre o sistema"""
+            messagebox.showinfo("Sobre",
+                                "Sistema de Energia Solar v2.0\n\n"
+                                "Dashboard Principal\n"
+                                "Desenvolvido para análise de sistemas fotovoltaicos\n\n"
+                                "© 2024")
+
+        def executar(self):
+            """Executa a interface gráfica"""
+            try:
+                self.root.mainloop()
+            except Exception as e:
+                messagebox.showerror("Erro Crítico", f"Erro na execução: {e}")
+            finally:
+                print("👋 Dashboard encerrado!")
+
+    def main():
+        """Função principal para teste"""
         try:
-            ano = self.var_ano_relatorio.get()
-
-            relatorio = f"""RELATÓRIO RESUMIDO - {ano}
-==========================
-
-SISTEMA:
-- Potência: {self.var_potencia.get():.1f} kW
-- Unidades: {len(self.sistema.sistema.get_unidades_ativas())}
-
-RESUMO FINANCEIRO:
-- Investimento: R$ {self.var_investimento.get():,.2f}
-- Tarifa: R$ {self.var_tarifa.get():.2f}/kWh
-
-STATUS: Sistema operacional
-Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-"""
-
-            self.text_relatorio.delete(1.0, tk.END)
-            self.text_relatorio.insert(1.0, relatorio)
-
-            messagebox.showinfo("Sucesso", "Relatório resumido gerado!")
-
+            app = InterfacePrincipal()
+            app.executar()
         except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao gerar relatório resumido: {e}")
+            print(f"❌ Erro ao iniciar dashboard: {e}")
+            import traceback
+            traceback.print_exc()
 
-    def abrir_janela_analises(self):
-        """Abre a janela de análises avançadas"""
-        try:
-            from ui.janela_analises import JanelaAnalises
-            janela_analises = JanelaAnalises(self.sistema)
-
-        except ImportError:
-            messagebox.showinfo("Info", "Janela de análises ainda não implementada")
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao abrir análises: {e}")
-
-    def mostrar_sobre(self):
-        """Mostra informações sobre o sistema"""
-        messagebox.showinfo("Sobre",
-                            "Sistema de Energia Solar v2.0\n\n"
-                            "Dashboard Principal\n"
-                            "Desenvolvido para análise de sistemas fotovoltaicos\n\n"
-                            "© 2024")
-
-    def executar(self):
-        """Executa a interface gráfica"""
-        try:
-            self.root.mainloop()
-        except Exception as e:
-            messagebox.showerror("Erro Crítico", f"Erro na execução: {e}")
-        finally:
-            print("👋 Dashboard encerrado!")
-
-
-def main():
-    """Função principal para teste"""
-    try:
-        app = InterfacePrincipal()
-        app.executar()
-    except Exception as e:
-        print(f"❌ Erro ao iniciar dashboard: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    main()
+    if __name__ == "__main__":
+        main()
